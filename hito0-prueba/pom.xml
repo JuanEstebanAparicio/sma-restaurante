@@ -26,11 +26,14 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <configuration>
-                    <mainClass>jade.Boot</mainClass>
+                    <executable>java</executable>
                     <arguments>
+                        <argument>-classpath</argument>
+                        <classpath/>
+                        <argument>jade.Boot</argument>
                         <argument>-gui</argument>
                         <argument>-agents</argument>
-                        <argument>receptor:sma.hito0.AgenteReceptor;emisor:sma.hito0.AgenteEmisor</argument>
+                        <argument>receptor:sma.restaurante.hito0.AgenteReceptor;emisor:sma.restaurante.hito0.AgenteEmisor</argument>
                     </arguments>
                 </configuration>
             </plugin>
