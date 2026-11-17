@@ -27,5 +27,6 @@
 
   <modules>
     <module>hito0-prueba</module>
+      <module>restaurante-core</module>
   </modules>
 </project>
