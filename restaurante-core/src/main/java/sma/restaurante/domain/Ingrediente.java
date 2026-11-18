@@ -1,8 +1,17 @@
 package sma.restaurante.domain;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Ingrediente {
 
     private Long idIngrediente;
@@ -15,7 +24,7 @@ public class Ingrediente {
 
     private String unidadMedida;
 
-    private BigDecimal stockMinino;
+    private BigDecimal stockMinimo;
 
     private String estado;
 
