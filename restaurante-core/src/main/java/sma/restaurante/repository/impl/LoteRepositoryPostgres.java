@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public abstract class LoteRepositoryPostgres
+public class LoteRepositoryPostgres
         implements LoteRepository {
 
     private Lote mapearLote(ResultSet rs)
