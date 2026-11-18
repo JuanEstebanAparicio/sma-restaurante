@@ -1,13 +1,22 @@
 package sma.restaurante;
 
-/**
- * Hello world!
- *
- */
-public class App 
-{
-    public static void main( String[] args )
-    {
-        System.out.println( "Hello World!" );
+import sma.restaurante.datasource.DatabaseConnection;
+
+import java.sql.Connection;
+
+public class App {
+
+    public static void main(String[] args) {
+
+        try (Connection connection =
+                     DatabaseConnection.getConnection()) {
+
+            System.out.println(
+                    "Conexion exitosa con Supabase"
+            );
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
