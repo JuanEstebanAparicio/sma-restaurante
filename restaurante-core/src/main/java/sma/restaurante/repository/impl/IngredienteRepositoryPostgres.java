@@ -73,7 +73,54 @@ public class IngredienteRepositoryPostgres
 
     @Override
     public Ingrediente guardar(Ingrediente ingrediente) {
-        throw new UnsupportedOperationException();
+
+        String sql = """
+            INSERT INTO inventario.ingrediente
+            (
+                nombre,
+                descripcion,
+                categoria,
+                unidad_medida,
+                stock_minimo,
+                estado,
+                observaciones
+            )
+            VALUES
+            (
+                ?, ?, ?, ?, ?, ?, ?
+            )
+            RETURNING id_ingrediente
+            """;
+
+        try (
+                Connection connection =
+                        DatabaseConnection.getConnection();
+
+                PreparedStatement ps =
+                        connection.prepareStatement(sql)
+        ) {
+
+            ps.setString(1, ingrediente.getNombre());
+            ps.setString(2, ingrediente.getDescripcion());
+            ps.setString(3, ingrediente.getCategoria());
+            ps.setString(4, ingrediente.getUnidadMedida());
+            ps.setBigDecimal(5, ingrediente.getStockMinimo());
+            ps.setString(6, ingrediente.getEstado());
+            ps.setString(7, ingrediente.getObservaciones());
+
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                ingrediente.setIdIngrediente(
+                        rs.getLong("id_ingrediente")
+                );
+            }
+
+            return ingrediente;
+
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
