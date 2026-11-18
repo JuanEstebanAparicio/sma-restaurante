@@ -24,7 +24,7 @@ public class Lote {
 
     private BigDecimal costoUnitario;
 
-    private String proveerdor;
+    private String proveedor;
 
     private String ubicacion;
 

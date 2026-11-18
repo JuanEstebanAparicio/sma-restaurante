@@ -3,40 +3,39 @@ package sma.restaurante.repository.impl;
 import sma.restaurante.domain.Lote;
 import sma.restaurante.repository.LoteRepository;
 
-import java.util.List;
-import java.util.Optional;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
-public class LoteRepositoryPostgres
+public abstract class LoteRepositoryPostgres
         implements LoteRepository {
 
-    @Override
-    public Lote guardar(Lote lote) {
-        return null;
-    }
+    private Lote mapearLote(ResultSet rs)
+            throws SQLException {
 
-    @Override
-    public Optional<Lote> buscarPorId(Long id) {
-        return Optional.empty();
-    }
-
-    @Override
-    public List<Lote> listarPorIngrediente(Long idIngrediente) {
-        return List.of();
-    }
-
-    @Override
-    public List<Lote> listarTodos() {
-        return List.of();
-    }
-
-    @Override
-    public void actualizar(Lote lote) {
-
-    }
-
-    @Override
-    public void eliminar(Long id) {
-
+        return Lote.builder()
+                .idLote(
+                        rs.getLong("id_lote"))
+                .idIngrediente(
+                        rs.getLong("id_ingrediente"))
+                .cantidad(
+                        rs.getBigDecimal("cantidad"))
+                .cantidadDisponible(
+                        rs.getBigDecimal("cantidad_disponible"))
+                .costoUnitario(
+                        rs.getBigDecimal("costo_unitario"))
+                .proveedor(
+                        rs.getString("proveedor"))
+                .ubicacion(
+                        rs.getString("ubicacion"))
+                .fechaIngreso(
+                        rs.getDate("fecha_ingreso")
+                                .toLocalDate())
+                .fechaVencimiento(
+                        rs.getDate("fecha_vencimiento")
+                                != null
+                                ? rs.getDate("fecha_vencimiento")
+                                .toLocalDate()
+                                : null)
+                .build();
     }
 }
-
