@@ -181,9 +181,9 @@ public class AlertaService {
                                         TipoAlerta.POR_VENCER.name()
                                 )
                                 .mensaje(
-                                        "Lote próximo a vencer de "
+                                        "Atención: el ingrediente "
                                                 + nombreIngrediente
-                                                + ". Fecha de vencimiento: "
+                                                + " posee existencias que vencerán el "
                                                 + fechaVencimiento
                                 )
                                 .activa(true)
