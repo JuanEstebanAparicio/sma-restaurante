@@ -20,7 +20,7 @@ public class TestAlertService {
                 );
 
         alertaService
-                .detectarBajoStock()
+                .detectarProximosAVencer()
                 .forEach(System.out::println);
     }
 }
