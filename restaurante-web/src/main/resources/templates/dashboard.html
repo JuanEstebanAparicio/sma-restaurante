@@ -1,12 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard de Inventario
-    </title>
+    <title>Dashboard Inventario</title>
 </head>
+
 <body>
-<h1>Bienvenido al sistema multiagente de gestión inteligente de inventario.</h1>
+
+<h1>Dashboard Inventario</h1>
+
+<hr>
+
+<h3>Total Ingredientes</h3>
+<p th:text="${dashboard.totalIngredientes}"></p>
+
+<h3>Alertas Activas</h3>
+<p th:text="${dashboard.totalAlertas}"></p>
+
+<h3>Ingredientes Agotados</h3>
+<p th:text="${dashboard.totalAgotados}"></p>
+
+<h3>Lotes Próximos a Vencer</h3>
+<p th:text="${dashboard.totalProximosAVencer}"></p>
 
 </body>
+
 </html>
