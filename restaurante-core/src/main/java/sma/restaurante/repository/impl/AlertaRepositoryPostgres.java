@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public abstract class AlertaRepositoryPostgres
+public class AlertaRepositoryPostgres
         implements AlertaRepository {
 
     private Alerta mapearAlerta(ResultSet rs)
@@ -37,6 +37,125 @@ public abstract class AlertaRepositoryPostgres
                                 .toLocalDateTime())
                 .build();
     }
+    @Override
+    public Optional<Alerta> buscarPorId(Long id) {
+
+        String sql = """
+            SELECT *
+            FROM inventario.alerta
+            WHERE id_alerta = ?
+            """;
+
+        try (
+                Connection connection =
+                        DatabaseConnection.getConnection();
+
+                PreparedStatement ps =
+                        connection.prepareStatement(sql)
+        ) {
+
+            ps.setLong(1, id);
+
+            try (ResultSet rs =
+                         ps.executeQuery()) {
+
+                if (rs.next()) {
+
+                    return Optional.of(
+                            mapearAlerta(rs)
+                    );
+                }
+            }
+
+            return Optional.empty();
+
+        } catch (Exception e) {
+
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<Alerta> listarTodas() {
+
+        List<Alerta> alertas =
+                new ArrayList<>();
+
+        String sql = """
+            SELECT *
+            FROM inventario.alerta
+            ORDER BY fecha_generacion DESC
+            """;
+
+        try (
+                Connection connection =
+                        DatabaseConnection.getConnection();
+
+                PreparedStatement ps =
+                        connection.prepareStatement(sql);
+
+                ResultSet rs =
+                        ps.executeQuery()
+        ) {
+
+            while (rs.next()) {
+
+                alertas.add(
+                        mapearAlerta(rs)
+                );
+            }
+
+        } catch (Exception e) {
+
+            throw new RuntimeException(e);
+        }
+
+        return alertas;
+    }
+
+    @Override
+    public List<Alerta> listarPorIngrediente(
+            Long idIngrediente) {
+
+        List<Alerta> alertas =
+                new ArrayList<>();
+
+        String sql = """
+            SELECT *
+            FROM inventario.alerta
+            WHERE id_ingrediente = ?
+            ORDER BY fecha_generacion DESC
+            """;
+
+        try (
+                Connection connection =
+                        DatabaseConnection.getConnection();
+
+                PreparedStatement ps =
+                        connection.prepareStatement(sql)
+        ) {
+
+            ps.setLong(1, idIngrediente);
+
+            try (ResultSet rs =
+                         ps.executeQuery()) {
+
+                while (rs.next()) {
+
+                    alertas.add(
+                            mapearAlerta(rs)
+                    );
+                }
+            }
+
+        } catch (Exception e) {
+
+            throw new RuntimeException(e);
+        }
+
+        return alertas;
+    }
+
 
     @Override
     public Alerta guardar(Alerta alerta) {
