@@ -7,21 +7,53 @@ import sma.restaurante.repository.impl.IngredienteRepositoryPostgres;
 import sma.restaurante.repository.impl.LoteRepositoryPostgres;
 
 public class TestAlertService {
+
     public static void main(String[] args) {
+
         IngredienteRepository ingredienteRepository =
                 new IngredienteRepositoryPostgres();
 
         LoteRepository loteRepository =
                 new LoteRepositoryPostgres();
+
         AlertaService alertaService =
                 new AlertaService(
                         ingredienteRepository,
                         loteRepository
                 );
 
+        System.out.println(
+                "===== AGOTADOS ====="
+        );
+
+        alertaService
+                .detectarAgotados()
+                .forEach(System.out::println);
+
+        System.out.println();
+
+        System.out.println(
+                "===== BAJO STOCK ====="
+        );
+
+        alertaService
+                .detectarBajoStock()
+                .forEach(System.out::println);
+
+        System.out.println();
+
+        System.out.println(
+                "===== PROXIMOS A VENCER ====="
+        );
+
         alertaService
                 .detectarProximosAVencer()
                 .forEach(System.out::println);
+
+        System.out.println();
+
+        System.out.println(
+                "TEST ALERTAS OK"
+        );
     }
 }
-
