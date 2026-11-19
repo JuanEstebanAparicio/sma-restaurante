@@ -156,7 +156,6 @@ public class AlertaRepositoryPostgres
         return alertas;
     }
 
-
     @Override
     public Alerta guardar(Alerta alerta) {
 
