@@ -1,30 +1,30 @@
 package sma.restaurante;
 
-import sma.restaurante.domain.Ingrediente;
-import sma.restaurante.repository.IngredienteRepository;
-import sma.restaurante.repository.impl.IngredienteRepositoryPostgres;
-
-import java.math.BigDecimal;
+import jade.core.Profile;
+import jade.core.ProfileImpl;
+import jade.core.Runtime;
+import jade.wrapper.AgentContainer;
 
 public class App {
 
-    public static void main(String[] args) {
+    public static void main(String[] args)
+            throws Exception {
 
-        IngredienteRepository repository =
-                new IngredienteRepositoryPostgres();
-        Ingrediente ingrediente =
-                Ingrediente.builder()
-                        .nombre("Tomate")
-                        .descripcion("Tomate chonto")
-                        .categoria("Vegetales")
-                        .unidadMedida("kg")
-                        .stockMinimo(BigDecimal.valueOf(5))
-                        .estado("ACTIVO")
-                        .observaciones("Prueba")
-                        .build();
+        Runtime runtime =
+                Runtime.instance();
 
-        repository.guardar(ingrediente);
+        Profile profile =
+                new ProfileImpl();
 
-        System.out.println(ingrediente);
+        AgentContainer container =
+                runtime.createMainContainer(
+                        profile
+                );
+
+        container.createNewAgent(
+                "inventario",
+                "sma.restaurante.agent.AgenteInventario",
+                null
+        ).start();
     }
 }
