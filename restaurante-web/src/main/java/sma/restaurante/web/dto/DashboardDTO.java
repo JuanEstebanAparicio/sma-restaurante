@@ -14,4 +14,6 @@ public class DashboardDTO {
     private Integer totalAgotados;
 
     private Integer totalProximosAVencer;
+
+    private Integer totalBajoStock;
 }
