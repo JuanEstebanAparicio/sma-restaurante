@@ -17,6 +17,8 @@ import java.time.LocalDate;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
+import sma.restaurante.domain.ReglasStock;
+
 @Service
 public class InventarioService {
 
@@ -118,19 +120,11 @@ public class InventarioService {
                 );
     }
 
-    public BigDecimal obtenerStockDisponible(
-            Long idIngrediente) {
+    public BigDecimal obtenerStockDisponible(Long idIngrediente) {
 
-        return loteRepository
-                .listarPorIngrediente(
-                        idIngrediente)
-                .stream()
-                .map(
-                        Lote::getCantidadDisponible)
-                .reduce(
-                        BigDecimal.ZERO,
-                        BigDecimal::add
-                );
+        return ReglasStock.stockVigente(
+                loteRepository.listarPorIngrediente(idIngrediente),
+                LocalDate.now());
     }
 
     public boolean consultarDisponibilidad(
