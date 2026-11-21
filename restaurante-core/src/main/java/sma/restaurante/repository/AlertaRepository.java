@@ -17,5 +17,7 @@ public interface AlertaRepository {
 
     List<Alerta> listarPorIngrediente(Long idIngrediente);
 
+    boolean guardarSiNoExiste(Alerta alerta);
+
     void resolver(Long idAlerta);
 }

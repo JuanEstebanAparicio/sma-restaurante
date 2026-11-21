@@ -4,6 +4,7 @@ import jade.core.Agent;
 import jade.core.behaviours.TickerBehaviour;
 
 import sma.restaurante.alerts.AlertaService;
+import sma.restaurante.datasource.DatabaseConnection;
 import sma.restaurante.domain.Alerta;
 import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.prediction.PrediccionService;
@@ -18,182 +19,80 @@ import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
 import sma.restaurante.service.InventarioService;
 
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class AgenteInventario extends Agent {
 
+    private static final Logger LOG = Logger.getLogger(AgenteInventario.class.getName());
+    private static final long PERIODO_MONITOREO_MS = 30_000;
+
     private InventarioService inventarioService;
-
     private AlertaService alertaService;
-
     private PrediccionService prediccionService;
-
     private AlertaRepository alertaRepository;
 
     @Override
     protected void setup() {
 
-        System.out.println(
-                getLocalName()
-                        + " iniciado correctamente."
-        );
+        IngredienteRepository ingredienteRepository = new IngredienteRepositoryPostgres();
+        LoteRepository loteRepository = new LoteRepositoryPostgres();
+        MovimientoRepository movimientoRepository = new MovimientoRepositoryPostgres();
+        alertaRepository = new AlertaRepositoryPostgres();
 
-        IngredienteRepository ingredienteRepository =
-                new IngredienteRepositoryPostgres();
+        inventarioService = new InventarioService(
+                ingredienteRepository, loteRepository, movimientoRepository);
+        alertaService = new AlertaService(ingredienteRepository, loteRepository);
+        prediccionService = new PrediccionService(loteRepository, movimientoRepository);
 
-        LoteRepository loteRepository =
-                new LoteRepositoryPostgres();
-
-        MovimientoRepository movimientoRepository =
-                new MovimientoRepositoryPostgres();
-
-        alertaRepository =
-                new AlertaRepositoryPostgres();
-
-        inventarioService =
-                new InventarioService(
-                        ingredienteRepository,
-                        loteRepository,
-                        movimientoRepository
-                );
-
-        alertaService =
-                new AlertaService(
-                        ingredienteRepository,
-                        loteRepository
-                );
-
-        prediccionService =
-                new PrediccionService(
-                        loteRepository,
-                        movimientoRepository
-                );
-
-        iniciarMonitoreoInventario();
-    }
-
-    private void iniciarMonitoreoInventario() {
-
-        addBehaviour(
-
-                new TickerBehaviour(
-                        this,
-                        30000
-                ) {
-
-                    @Override
-                    protected void onTick() {
-
-                        System.out.println();
-                        System.out.println(
-                                "===== CICLO INVENTARIO ====="
-                        );
-
-                        procesarAgotados();
-
-                        procesarBajoStock();
-
-                        procesarProximosAVencer();
-
-                        procesarPredicciones();
-                    }
-                }
-        );
-    }
-
-    private void procesarAgotados() {
-
-        List<Alerta> alertas =
-
-                alertaService
-                        .detectarAgotados();
-
-        alertas.forEach(alerta -> {
-
-            alertaRepository
-                    .guardar(alerta);
-
-            System.out.println(
-                    "[AGOTADO] "
-                            + alerta.getMensaje()
-            );
+        addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
+            @Override
+            protected void onTick() {
+                ejecutarCicloMonitoreo();
+            }
         });
+
+        LOG.info(getLocalName() + " iniciado");
     }
 
-    private void procesarBajoStock() {
-
-        List<Alerta> alertas =
-
-                alertaService
-                        .detectarBajoStock();
-
-        alertas.forEach(alerta -> {
-
-            alertaRepository
-                    .guardar(alerta);
-
-            System.out.println(
-                    "[BAJO STOCK] "
-                            + alerta.getMensaje()
-            );
-        });
+    /** Un fallo (por ejemplo, la base de datos pausada) no debe matar al agente. */
+    private void ejecutarCicloMonitoreo() {
+        try {
+            publicar("AGOTADO", alertaService.detectarAgotados());
+            publicar("BAJO STOCK", alertaService.detectarBajoStock());
+            publicar("POR VENCER", alertaService.detectarProximosAVencer());
+            procesarPredicciones();
+        } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Fallo en el ciclo de monitoreo; se reintenta en el siguiente", e);
+        }
     }
 
-    private void procesarProximosAVencer() {
-
-        List<Alerta> alertas =
-
-                alertaService
-                        .detectarProximosAVencer();
-
-        alertas.forEach(alerta -> {
-
-            alertaRepository
-                    .guardar(alerta);
-
-            System.out.println(
-                    "[POR VENCER] "
-                            + alerta.getMensaje()
-            );
-        });
+    private void publicar(String etiqueta, List<Alerta> alertas) {
+        for (Alerta alerta : alertas) {
+            if (alertaRepository.guardarSiNoExiste(alerta)) {
+                LOG.warning("[" + etiqueta + "] " + alerta.getMensaje());
+            }
+        }
     }
 
     private void procesarPredicciones() {
-
-        for (Ingrediente ingrediente :
-
-                inventarioService
-                        .listarIngredientes()) {
-
+        for (Ingrediente ingrediente : inventarioService.listarIngredientes()) {
             try {
-
-                String resultado =
-
-                        prediccionService
-                                .predecirAgotamiento(
-                                        ingrediente.getIdIngrediente(),
-                                        ingrediente.getNombre(),
-                                        ingrediente.getUnidadMedida()
-                                );
-
-                System.out.println();
-                System.out.println(resultado);
-
-            } catch (Exception e) {
-
-                System.out.println(
-                        "Error procesando predicción de "
-                                + ingrediente.getNombre()
-                );
+                String resultado = prediccionService.predecirAgotamiento(
+                        ingrediente.getIdIngrediente(),
+                        ingrediente.getNombre(),
+                        ingrediente.getUnidadMedida());
+                LOG.fine(resultado);
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING,
+                        "Error procesando la prediccion de " + ingrediente.getNombre(), e);
             }
         }
     }
 
     @Override
     protected void takeDown() {
-
-        System.out.println(
-                getLocalName()
-                        + " finalizado."
-        );
+        DatabaseConnection.cerrar();
+        LOG.info(getLocalName() + " finalizado");
     }
 }

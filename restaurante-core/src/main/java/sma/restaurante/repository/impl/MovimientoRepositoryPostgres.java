@@ -13,93 +13,63 @@ import java.util.Optional;
 public class MovimientoRepositoryPostgres
         implements MovimientoRepository {
 
-    private Movimiento mapearMovimiento(
-            ResultSet rs)
-            throws SQLException {
+    private Movimiento mapearMovimiento(ResultSet rs) throws SQLException {
+
+        long idLote = rs.getLong("id_lote");
+        boolean sinLote = rs.wasNull();
 
         return Movimiento.builder()
-                .idMovimiento(
-                        rs.getLong("id_movimiento"))
-                .idIngrediente(
-                        rs.getLong("id_ingrediente"))
-                .idLote(
-                        rs.getLong("id_lote"))
-                .tipoMovimiento(
-                        rs.getString("tipo_movimiento"))
-                .cantidad(
-                        rs.getBigDecimal("cantidad"))
-                .fechaMovimiento(
-                        rs.getTimestamp("fecha_movimiento")
-                                .toLocalDateTime())
-                .motivo(
-                        rs.getString("motivo"))
+                .idMovimiento(rs.getLong("id_movimiento"))
+                .idIngrediente(rs.getLong("id_ingrediente"))
+                .idLote(sinLote ? null : idLote)
+                .tipoMovimiento(rs.getString("tipo_movimiento"))
+                .cantidad(rs.getBigDecimal("cantidad"))
+                .fechaMovimiento(rs.getTimestamp("fecha_movimiento").toLocalDateTime())
+                .motivo(rs.getString("motivo"))
                 .build();
     }
 
     @Override
-    public Movimiento guardar(
-            Movimiento movimiento) {
+    public Movimiento guardar(Movimiento movimiento) {
 
         String sql = """
-                INSERT INTO inventario.movimiento
-                (
-                    id_ingrediente,
-                    id_lote,
-                    tipo_movimiento,
-                    cantidad,
-                    motivo
-                )
-                VALUES
-                (
-                    ?, ?, ?, ?, ?
-                )
-                RETURNING id_movimiento
-                """;
+            INSERT INTO inventario.movimiento
+                (id_ingrediente, id_lote, tipo_movimiento, cantidad, fecha_movimiento, motivo)
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id_movimiento
+            """;
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
+        LocalDateTime fecha = movimiento.getFechaMovimiento() != null
+                ? movimiento.getFechaMovimiento()
+                : LocalDateTime.now();
 
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
 
-            ps.setLong(
-                    1,
-                    movimiento.getIdIngrediente());
+            ps.setLong(1, movimiento.getIdIngrediente());
 
-            ps.setLong(
-                    2,
-                    movimiento.getIdLote());
+            if (movimiento.getIdLote() != null) {
+                ps.setLong(2, movimiento.getIdLote());
+            } else {
+                ps.setNull(2, Types.BIGINT);
+            }
 
-            ps.setString(
-                    3,
-                    movimiento.getTipoMovimiento());
+            ps.setString(3, movimiento.getTipoMovimiento());
+            ps.setBigDecimal(4, movimiento.getCantidad());
+            ps.setTimestamp(5, Timestamp.valueOf(fecha));
+            ps.setString(6, movimiento.getMotivo());
 
-            ps.setBigDecimal(
-                    4,
-                    movimiento.getCantidad());
-
-            ps.setString(
-                    5,
-                    movimiento.getMotivo());
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
+            try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-
-                    movimiento.setIdMovimiento(
-                            rs.getLong(
-                                    "id_movimiento"));
+                    movimiento.setIdMovimiento(rs.getLong("id_movimiento"));
+                    movimiento.setFechaMovimiento(fecha);
                 }
             }
 
             return movimiento;
 
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
+        } catch (SQLException e) {
+            throw new RuntimeException("No se pudo guardar el movimiento", e);
         }
     }
 

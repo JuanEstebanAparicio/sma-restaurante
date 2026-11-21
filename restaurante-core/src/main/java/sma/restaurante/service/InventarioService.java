@@ -3,7 +3,9 @@ package sma.restaurante.service;
 import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.domain.Lote;
 import sma.restaurante.domain.Movimiento;
+import sma.restaurante.domain.enums.TipoMovimiento;
 import sma.restaurante.exception.IngredienteDuplicadoException;
+import sma.restaurante.exception.IngredienteNoEncontradoException;
 import sma.restaurante.exception.ValidacionInventarioException;
 import sma.restaurante.repository.IngredienteRepository;
 import sma.restaurante.repository.LoteRepository;
@@ -11,6 +13,7 @@ import sma.restaurante.repository.MovimientoRepository;
 import sma.restaurante.util.NormalizadorTexto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -52,30 +55,53 @@ public class InventarioService {
                 .guardar(ingrediente);
     }
 
-    public Lote registrarLote(
-            Lote lote) {
+    public Lote registrarLote(Lote lote) {
 
-        Lote loteGuardado =
-                loteRepository.guardar(lote);
+        validarLote(lote);
 
-        Movimiento movimiento =
-                Movimiento.builder()
-                        .idIngrediente(
-                                lote.getIdIngrediente())
-                        .idLote(
-                                loteGuardado.getIdLote())
-                        .tipoMovimiento("ENTRADA")
-                        .cantidad(
-                                lote.getCantidad())
-                        .motivo(
-                                "REGISTRO DE LOTE")
-                        .build();
+        Lote loteGuardado = loteRepository.guardar(lote);
 
         movimientoRepository.guardar(
-                movimiento
-        );
+                Movimiento.builder()
+                        .idIngrediente(lote.getIdIngrediente())
+                        .idLote(loteGuardado.getIdLote())
+                        .tipoMovimiento(TipoMovimiento.ENTRADA.name())
+                        .cantidad(lote.getCantidad())
+                        .motivo("REGISTRO DE LOTE")
+                        .build());
 
         return loteGuardado;
+    }
+
+    private void validarLote(Lote lote) {
+
+        if (lote.getIdIngrediente() == null) {
+            throw new ValidacionInventarioException("El lote necesita un ingrediente");
+        }
+
+        ingredienteRepository.buscarPorId(lote.getIdIngrediente())
+                .orElseThrow(() -> new IngredienteNoEncontradoException(lote.getIdIngrediente()));
+
+        if (lote.getCantidad() == null || lote.getCantidad().signum() <= 0) {
+            throw new ValidacionInventarioException("La cantidad del lote debe ser mayor que cero");
+        }
+
+        if (lote.getCostoUnitario() == null || lote.getCostoUnitario().signum() < 0) {
+            throw new ValidacionInventarioException("El costo unitario no puede ser negativo");
+        }
+
+        if (lote.getFechaIngreso() == null) {
+            lote.setFechaIngreso(LocalDate.now());
+        }
+
+        if (lote.getFechaVencimiento() != null
+                && lote.getFechaVencimiento().isBefore(lote.getFechaIngreso())) {
+            throw new ValidacionInventarioException("El lote no puede vencer antes de su ingreso");
+        }
+
+        if (lote.getCantidadDisponible() == null) {
+            lote.setCantidadDisponible(lote.getCantidad());
+        }
     }
 
     public List<Ingrediente> listarIngredientes() {
@@ -149,6 +175,12 @@ public class InventarioService {
     private void normalizarIngrediente(
             Ingrediente ingrediente) {
 
+        if (ingrediente.getEstado() == null || ingrediente.getEstado().isBlank()) {
+            ingrediente.setEstado("ACTIVO");
+        }
+        if (ingrediente.getStockMinimo() == null) {
+            ingrediente.setStockMinimo(BigDecimal.ZERO);
+        }
         ingrediente.setNombre(
                 NormalizadorTexto.normalizar(
                         ingrediente.getNombre()));

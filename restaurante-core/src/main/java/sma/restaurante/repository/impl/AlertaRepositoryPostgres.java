@@ -273,4 +273,34 @@ public class AlertaRepositoryPostgres
             throw new RuntimeException(e);
         }
     }
+
+    @Override
+    public boolean guardarSiNoExiste(Alerta alerta) {
+
+        String sql = """
+            INSERT INTO inventario.alerta (id_ingrediente, tipo_alerta, mensaje, activa)
+            VALUES (?, ?, ?, TRUE)
+            ON CONFLICT (id_ingrediente, tipo_alerta) WHERE activa DO NOTHING
+            RETURNING id_alerta
+            """;
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
+
+            ps.setLong(1, alerta.getIdIngrediente());
+            ps.setString(2, alerta.getTipoAlerta());
+            ps.setString(3, alerta.getMensaje());
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    alerta.setIdAlerta(rs.getLong("id_alerta"));
+                    return true;
+                }
+                return false;
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("No se pudo guardar la alerta", e);
+        }
+    }
 }
