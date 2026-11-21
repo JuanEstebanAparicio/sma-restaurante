@@ -5,7 +5,6 @@ import jade.core.behaviours.TickerBehaviour;
 
 import sma.restaurante.alerts.AlertaService;
 import sma.restaurante.datasource.DatabaseConnection;
-import sma.restaurante.domain.Alerta;
 import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.prediction.PrediccionService;
 import sma.restaurante.repository.AlertaRepository;
@@ -18,7 +17,7 @@ import sma.restaurante.repository.impl.LoteRepositoryPostgres;
 import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
 import sma.restaurante.service.InventarioService;
 
-import java.util.List;
+import java.time.LocalDate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,7 +29,6 @@ public class AgenteInventario extends Agent {
     private InventarioService inventarioService;
     private AlertaService alertaService;
     private PrediccionService prediccionService;
-    private AlertaRepository alertaRepository;
 
     @Override
     protected void setup() {
@@ -38,11 +36,12 @@ public class AgenteInventario extends Agent {
         IngredienteRepository ingredienteRepository = new IngredienteRepositoryPostgres();
         LoteRepository loteRepository = new LoteRepositoryPostgres();
         MovimientoRepository movimientoRepository = new MovimientoRepositoryPostgres();
-        alertaRepository = new AlertaRepositoryPostgres();
+        AlertaRepository alertaRepository = new AlertaRepositoryPostgres();
 
         inventarioService = new InventarioService(
                 ingredienteRepository, loteRepository, movimientoRepository);
-        alertaService = new AlertaService(ingredienteRepository, loteRepository);
+        alertaService = new AlertaService(
+                ingredienteRepository, loteRepository, alertaRepository);
         prediccionService = new PrediccionService(loteRepository, movimientoRepository);
 
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
@@ -58,20 +57,22 @@ public class AgenteInventario extends Agent {
     /** Un fallo (por ejemplo, la base de datos pausada) no debe matar al agente. */
     private void ejecutarCicloMonitoreo() {
         try {
-            publicar("AGOTADO", alertaService.detectarAgotados());
-            publicar("BAJO STOCK", alertaService.detectarBajoStock());
-            publicar("POR VENCER", alertaService.detectarProximosAVencer());
-            procesarPredicciones();
-        } catch (RuntimeException e) {
-            LOG.log(Level.SEVERE, "Fallo en el ciclo de monitoreo; se reintenta en el siguiente", e);
-        }
-    }
+            AlertaService.ResultadoSincronizacion resultado =
+                    alertaService.sincronizar(LocalDate.now());
 
-    private void publicar(String etiqueta, List<Alerta> alertas) {
-        for (Alerta alerta : alertas) {
-            if (alertaRepository.guardarSiNoExiste(alerta)) {
-                LOG.warning("[" + etiqueta + "] " + alerta.getMensaje());
+            resultado.nuevas().forEach(alerta ->
+                    LOG.warning("[" + alerta.getTipoAlerta() + "] " + alerta.getMensaje()));
+
+            if (resultado.resueltas() > 0) {
+                LOG.info(resultado.resueltas()
+                        + " alerta(s) resuelta(s) porque la condicion desaparecio");
             }
+
+            procesarPredicciones();
+
+        } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE,
+                    "Fallo en el ciclo de monitoreo; se reintenta en el siguiente", e);
         }
     }
 

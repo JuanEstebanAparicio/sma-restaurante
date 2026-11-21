@@ -8,5 +8,7 @@ public enum TipoAlerta {
 
     POR_VENCER,
 
+    VENCIDO,
+
     AGOTAMIENTO_PREDICTIVO
 }
