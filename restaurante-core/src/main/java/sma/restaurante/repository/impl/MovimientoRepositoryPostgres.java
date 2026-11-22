@@ -3,6 +3,9 @@ package sma.restaurante.repository.impl;
 import sma.restaurante.datasource.DatabaseConnection;
 import sma.restaurante.domain.Movimiento;
 import sma.restaurante.repository.MovimientoRepository;
+import sma.restaurante.domain.ResumenConsumo;
+import java.util.HashMap;
+import java.util.Map;
 
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -285,5 +288,43 @@ public class MovimientoRepositoryPostgres
         }
 
         return movimientos;
+    }
+
+    @Override
+    public Map<Long, ResumenConsumo> resumenConsumo(LocalDateTime desde, LocalDateTime hasta) {
+
+        String sql = """
+            SELECT id_ingrediente,
+                   COALESCE(SUM(cantidad) FILTER (
+                       WHERE tipo_movimiento = 'CONSUMO'
+                         AND fecha_movimiento BETWEEN ? AND ?), 0) AS consumo_total,
+                   MIN(fecha_movimiento) AS primer_movimiento
+            FROM inventario.movimiento
+            GROUP BY id_ingrediente
+            """;
+
+        Map<Long, ResumenConsumo> resumenes = new HashMap<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
+
+            ps.setTimestamp(1, Timestamp.valueOf(desde));
+            ps.setTimestamp(2, Timestamp.valueOf(hasta));
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    resumenes.put(
+                            rs.getLong("id_ingrediente"),
+                            new ResumenConsumo(
+                                    rs.getBigDecimal("consumo_total"),
+                                    rs.getTimestamp("primer_movimiento").toLocalDateTime()));
+                }
+            }
+
+            return resumenes;
+
+        } catch (SQLException e) {
+            throw new RuntimeException("No se pudo calcular el resumen de consumo", e);
+        }
     }
 }

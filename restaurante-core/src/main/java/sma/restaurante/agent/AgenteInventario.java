@@ -5,7 +5,6 @@ import jade.core.behaviours.TickerBehaviour;
 
 import sma.restaurante.alerts.AlertaService;
 import sma.restaurante.datasource.DatabaseConnection;
-import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.prediction.PrediccionService;
 import sma.restaurante.repository.AlertaRepository;
 import sma.restaurante.repository.IngredienteRepository;
@@ -17,7 +16,7 @@ import sma.restaurante.repository.impl.LoteRepositoryPostgres;
 import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
 import sma.restaurante.service.InventarioService;
 
-import java.time.LocalDate;
+import java.time.Clock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -26,9 +25,9 @@ public class AgenteInventario extends Agent {
     private static final Logger LOG = Logger.getLogger(AgenteInventario.class.getName());
     private static final long PERIODO_MONITOREO_MS = 30_000;
 
+    /** Lo usaran los mensajes ACL del paso 3 (reservas, disponibilidad de platos). */
     private InventarioService inventarioService;
     private AlertaService alertaService;
-    private PrediccionService prediccionService;
 
     @Override
     protected void setup() {
@@ -40,9 +39,13 @@ public class AgenteInventario extends Agent {
 
         inventarioService = new InventarioService(
                 ingredienteRepository, loteRepository, movimientoRepository);
+
         alertaService = new AlertaService(
-                ingredienteRepository, loteRepository, alertaRepository);
-        prediccionService = new PrediccionService(loteRepository, movimientoRepository);
+                ingredienteRepository,
+                loteRepository,
+                alertaRepository,
+                new PrediccionService(movimientoRepository),
+                Clock.systemDefaultZone());
 
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
             @Override
@@ -57,8 +60,7 @@ public class AgenteInventario extends Agent {
     /** Un fallo (por ejemplo, la base de datos pausada) no debe matar al agente. */
     private void ejecutarCicloMonitoreo() {
         try {
-            AlertaService.ResultadoSincronizacion resultado =
-                    alertaService.sincronizar(LocalDate.now());
+            AlertaService.ResultadoSincronizacion resultado = alertaService.sincronizar();
 
             resultado.nuevas().forEach(alerta ->
                     LOG.warning("[" + alerta.getTipoAlerta() + "] " + alerta.getMensaje()));
@@ -68,26 +70,9 @@ public class AgenteInventario extends Agent {
                         + " alerta(s) resuelta(s) porque la condicion desaparecio");
             }
 
-            procesarPredicciones();
-
         } catch (RuntimeException e) {
             LOG.log(Level.SEVERE,
                     "Fallo en el ciclo de monitoreo; se reintenta en el siguiente", e);
-        }
-    }
-
-    private void procesarPredicciones() {
-        for (Ingrediente ingrediente : inventarioService.listarIngredientes()) {
-            try {
-                String resultado = prediccionService.predecirAgotamiento(
-                        ingrediente.getIdIngrediente(),
-                        ingrediente.getNombre(),
-                        ingrediente.getUnidadMedida());
-                LOG.fine(resultado);
-            } catch (RuntimeException e) {
-                LOG.log(Level.WARNING,
-                        "Error procesando la prediccion de " + ingrediente.getNombre(), e);
-            }
         }
     }
 
