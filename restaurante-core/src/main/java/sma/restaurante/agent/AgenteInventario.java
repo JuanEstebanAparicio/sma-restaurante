@@ -15,6 +15,8 @@ import sma.restaurante.repository.impl.IngredienteRepositoryPostgres;
 import sma.restaurante.repository.impl.LoteRepositoryPostgres;
 import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
 import sma.restaurante.service.InventarioService;
+import sma.restaurante.repository.Transaccion;
+import sma.restaurante.repository.impl.TransaccionPostgres;
 
 import java.time.Clock;
 import java.util.logging.Level;
@@ -36,9 +38,10 @@ public class AgenteInventario extends Agent {
         LoteRepository loteRepository = new LoteRepositoryPostgres();
         MovimientoRepository movimientoRepository = new MovimientoRepositoryPostgres();
         AlertaRepository alertaRepository = new AlertaRepositoryPostgres();
+        Transaccion transaccion = new TransaccionPostgres();
 
         inventarioService = new InventarioService(
-                ingredienteRepository, loteRepository, movimientoRepository);
+                ingredienteRepository, loteRepository, movimientoRepository, transaccion);
 
         alertaService = new AlertaService(
                 ingredienteRepository,
