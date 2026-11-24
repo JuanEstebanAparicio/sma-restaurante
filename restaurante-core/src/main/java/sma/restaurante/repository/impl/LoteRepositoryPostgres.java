@@ -1,344 +1,109 @@
 package sma.restaurante.repository.impl;
 
-import sma.restaurante.datasource.DatabaseConnection;
+import sma.restaurante.datasource.Jdbc;
 import sma.restaurante.domain.Lote;
 import sma.restaurante.repository.LoteRepository;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public class LoteRepositoryPostgres
-        implements LoteRepository {
+public class LoteRepositoryPostgres implements LoteRepository {
 
-    private Lote mapearLote(ResultSet rs)
-            throws SQLException {
-
-        return Lote.builder()
-                .idLote(
-                        rs.getLong("id_lote"))
-                .idIngrediente(
-                        rs.getLong("id_ingrediente"))
-                .cantidad(
-                        rs.getBigDecimal("cantidad"))
-                .cantidadDisponible(
-                        rs.getBigDecimal("cantidad_disponible"))
-                .costoUnitario(
-                        rs.getBigDecimal("costo_unitario"))
-                .proveedor(
-                        rs.getString("proveedor"))
-                .ubicacion(
-                        rs.getString("ubicacion"))
-                .fechaIngreso(
-                        rs.getDate("fecha_ingreso")
-                                .toLocalDate())
-                .fechaVencimiento(
-                        rs.getDate("fecha_vencimiento")
-                                != null
-                                ? rs.getDate("fecha_vencimiento")
-                                .toLocalDate()
-                                : null)
-                .build();
-    }
-
-    @Override
-    public List<Lote> listarPorIngrediente(
-            Long idIngrediente) {
-
-        List<Lote> lotes =
-                new ArrayList<>();
-
-        String sql = """
-            SELECT *
+    private static final String SELECT = """
+            SELECT id_lote, id_ingrediente, cantidad, cantidad_disponible, costo_unitario,
+                   proveedor, ubicacion, fecha_ingreso, fecha_vencimiento
             FROM inventario.lote
-            WHERE id_ingrediente = ?
-            ORDER BY fecha_vencimiento
             """;
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
+    private static final String SQL_LISTAR = SELECT + "ORDER BY fecha_vencimiento";
+    private static final String SQL_POR_ID = SELECT + "WHERE id_lote = ?";
+    private static final String SQL_POR_INGREDIENTE =
+            SELECT + "WHERE id_ingrediente = ? ORDER BY fecha_vencimiento";
 
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
+    private static final String SQL_INSERTAR = """
+            INSERT INTO inventario.lote
+                (id_ingrediente, cantidad, cantidad_disponible, costo_unitario,
+                 proveedor, ubicacion, fecha_ingreso, fecha_vencimiento)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id_lote
+            """;
 
-            ps.setLong(1, idIngrediente);
+    private static final String SQL_ACTUALIZAR = """
+            UPDATE inventario.lote
+            SET cantidad = ?, cantidad_disponible = ?, costo_unitario = ?,
+                proveedor = ?, ubicacion = ?, fecha_ingreso = ?, fecha_vencimiento = ?
+            WHERE id_lote = ?
+            """;
 
-            try (ResultSet rs =
-                         ps.executeQuery()) {
+    private static final String SQL_ELIMINAR = "DELETE FROM inventario.lote WHERE id_lote = ?";
 
-                while (rs.next()) {
-
-                    lotes.add(
-                            mapearLote(rs)
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return lotes;
+    @Override
+    public List<Lote> listarTodos() {
+        return Jdbc.consultar(SQL_LISTAR, Jdbc.SIN_PARAMETROS, LoteRepositoryPostgres::mapear);
     }
 
     @Override
     public Optional<Lote> buscarPorId(Long id) {
+        return Jdbc.consultarUno(SQL_POR_ID, ps -> ps.setLong(1, id), LoteRepositoryPostgres::mapear);
+    }
 
-        String sql = """
-            SELECT *
-            FROM inventario.lote
-            WHERE id_lote = ?
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, id);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                if (rs.next()) {
-
-                    return Optional.of(
-                            mapearLote(rs)
-                    );
-                }
-            }
-
-            return Optional.empty();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
+    @Override
+    public List<Lote> listarPorIngrediente(Long idIngrediente) {
+        return Jdbc.consultar(SQL_POR_INGREDIENTE, ps -> ps.setLong(1, idIngrediente), LoteRepositoryPostgres::mapear);
     }
 
     @Override
     public Lote guardar(Lote lote) {
-
-        String sql = """
-            INSERT INTO inventario.lote
-            (
-                id_ingrediente,
-                cantidad,
-                cantidad_disponible,
-                costo_unitario,
-                proveedor,
-                ubicacion,
-                fecha_ingreso,
-                fecha_vencimiento
-            )
-            VALUES
-            (
-                ?, ?, ?, ?, ?, ?, ?, ?
-            )
-            RETURNING id_lote
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, lote.getIdIngrediente());
-            ps.setBigDecimal(2, lote.getCantidad());
-            ps.setBigDecimal(3, lote.getCantidadDisponible());
-            ps.setBigDecimal(4, lote.getCostoUnitario());
-            ps.setString(5, lote.getProveedor());
-            ps.setString(6, lote.getUbicacion());
-
-            ps.setDate(
-                    7,
-                    java.sql.Date.valueOf(
-                            lote.getFechaIngreso()
-                    ));
-
-            if (lote.getFechaVencimiento() != null) {
-
-                ps.setDate(
-                        8,
-                        java.sql.Date.valueOf(
-                                lote.getFechaVencimiento()
-                        )
-                );
-
-            } else {
-
-                ps.setNull(
-                        8,
-                        java.sql.Types.DATE
-                );
-            }
-
-            ResultSet rs =
-                    ps.executeQuery();
-
-            if (rs.next()) {
-
-                lote.setIdLote(
-                        rs.getLong("id_lote")
-                );
-            }
-
-            return lote;
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public List<Lote> listarTodos() {
-
-        List<Lote> lotes =
-                new ArrayList<>();
-
-        String sql = """
-            SELECT *
-            FROM inventario.lote
-            ORDER BY fecha_vencimiento
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql);
-
-                ResultSet rs =
-                        ps.executeQuery()
-        ) {
-
-            while (rs.next()) {
-
-                lotes.add(
-                        mapearLote(rs)
-                );
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return lotes;
+        return Jdbc.consultarUno(SQL_INSERTAR,
+                        ps -> {
+                            ps.setLong(1, lote.getIdIngrediente());
+                            asignarDatos(ps, lote, 2);
+                        },
+                        rs -> {
+                            lote.setIdLote(rs.getLong("id_lote"));
+                            return lote;
+                        })
+                .orElseThrow(() -> new IllegalStateException("El INSERT no devolvio el id del lote"));
     }
 
     @Override
     public void actualizar(Lote lote) {
-
-        String sql = """
-            UPDATE inventario.lote
-            SET
-                cantidad = ?,
-                cantidad_disponible = ?,
-                costo_unitario = ?,
-                proveedor = ?,
-                ubicacion = ?,
-                fecha_ingreso = ?,
-                fecha_vencimiento = ?
-            WHERE id_lote = ?
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setBigDecimal(
-                    1,
-                    lote.getCantidad());
-
-            ps.setBigDecimal(
-                    2,
-                    lote.getCantidadDisponible());
-
-            ps.setBigDecimal(
-                    3,
-                    lote.getCostoUnitario());
-
-            ps.setString(
-                    4,
-                    lote.getProveedor());
-
-            ps.setString(
-                    5,
-                    lote.getUbicacion());
-
-            ps.setDate(
-                    6,
-                    java.sql.Date.valueOf(
-                            lote.getFechaIngreso()));
-
-            if (lote.getFechaVencimiento() != null) {
-
-                ps.setDate(
-                        7,
-                        java.sql.Date.valueOf(
-                                lote.getFechaVencimiento()));
-            } else {
-
-                ps.setNull(
-                        7,
-                        java.sql.Types.DATE);
-            }
-
-            ps.setLong(
-                    8,
-                    lote.getIdLote());
-
-            ps.executeUpdate();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
+        Jdbc.actualizar(SQL_ACTUALIZAR, ps -> {
+            asignarDatos(ps, lote, 1);
+            ps.setLong(8, lote.getIdLote());
+        });
     }
 
     @Override
     public void eliminar(Long id) {
+        Jdbc.actualizar(SQL_ELIMINAR, ps -> ps.setLong(1, id));
+    }
 
-        String sql = """
-            DELETE FROM inventario.lote
-            WHERE id_lote = ?
-            """;
+    /** Siete columnas consecutivas a partir de 'desde': cantidad ... fecha_vencimiento. */
+    private static void asignarDatos(PreparedStatement ps, Lote lote, int desde) throws SQLException {
+        ps.setBigDecimal(desde, lote.getCantidad());
+        ps.setBigDecimal(desde + 1, lote.getCantidadDisponible());
+        ps.setBigDecimal(desde + 2, lote.getCostoUnitario());
+        ps.setString(desde + 3, lote.getProveedor());
+        ps.setString(desde + 4, lote.getUbicacion());
+        Jdbc.asignarFecha(ps, desde + 5, lote.getFechaIngreso());
+        Jdbc.asignarFecha(ps, desde + 6, lote.getFechaVencimiento());
+    }
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, id);
-
-            ps.executeUpdate();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
+    private static Lote mapear(ResultSet rs) throws SQLException {
+        return Lote.builder()
+                .idLote(rs.getLong("id_lote"))
+                .idIngrediente(rs.getLong("id_ingrediente"))
+                .cantidad(rs.getBigDecimal("cantidad"))
+                .cantidadDisponible(rs.getBigDecimal("cantidad_disponible"))
+                .costoUnitario(rs.getBigDecimal("costo_unitario"))
+                .proveedor(rs.getString("proveedor"))
+                .ubicacion(rs.getString("ubicacion"))
+                .fechaIngreso(Jdbc.leerFecha(rs, "fecha_ingreso"))
+                .fechaVencimiento(Jdbc.leerFecha(rs, "fecha_vencimiento"))
+                .build();
     }
 }

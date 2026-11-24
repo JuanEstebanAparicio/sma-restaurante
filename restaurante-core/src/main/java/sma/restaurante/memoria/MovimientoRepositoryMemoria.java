@@ -2,6 +2,7 @@ package sma.restaurante.memoria;
 
 import sma.restaurante.domain.Movimiento;
 import sma.restaurante.domain.ResumenConsumo;
+import sma.restaurante.domain.enums.TipoMovimiento;
 import sma.restaurante.repository.MovimientoRepository;
 
 import java.math.BigDecimal;
@@ -45,7 +46,7 @@ public class MovimientoRepositoryMemoria implements MovimientoRepository {
     }
 
     @Override
-    public List<Movimiento> listarPorTipo(String tipo) {
+    public List<Movimiento> listarPorTipo(TipoMovimiento tipo) {
         return datos.stream().filter(m -> m.getTipoMovimiento().equals(tipo)).toList();
     }
 
@@ -63,7 +64,7 @@ public class MovimientoRepositoryMemoria implements MovimientoRepository {
         Map<Long, ResumenConsumo> resumenes = new HashMap<>();
 
         for (Movimiento m : datos) {
-            BigDecimal consumo = "CONSUMO".equals(m.getTipoMovimiento())
+            BigDecimal consumo = m.getTipoMovimiento() == TipoMovimiento.CONSUMO
                     && !m.getFechaMovimiento().isBefore(desde)
                     && !m.getFechaMovimiento().isAfter(hasta)
                     ? m.getCantidad()

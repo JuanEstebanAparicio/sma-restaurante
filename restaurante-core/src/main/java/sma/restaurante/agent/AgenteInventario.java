@@ -17,6 +17,7 @@ import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
 import sma.restaurante.service.InventarioService;
 import sma.restaurante.repository.Transaccion;
 import sma.restaurante.repository.impl.TransaccionPostgres;
+import sma.restaurante.util.Tiempo;
 
 import java.time.Clock;
 import java.util.logging.Level;
@@ -48,7 +49,7 @@ public class AgenteInventario extends Agent {
                 loteRepository,
                 alertaRepository,
                 new PrediccionService(movimientoRepository),
-                Clock.systemDefaultZone());
+                Clock.system(Tiempo.ZONA));
 
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
             @Override

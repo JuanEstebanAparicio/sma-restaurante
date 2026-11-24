@@ -1,306 +1,116 @@
 package sma.restaurante.repository.impl;
 
-import sma.restaurante.datasource.DatabaseConnection;
+import sma.restaurante.datasource.Jdbc;
 import sma.restaurante.domain.Alerta;
+import sma.restaurante.domain.enums.TipoAlerta;
 import sma.restaurante.repository.AlertaRepository;
 
-import java.sql.*;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
-public class AlertaRepositoryPostgres
-        implements AlertaRepository {
+public class AlertaRepositoryPostgres implements AlertaRepository {
 
-    private Alerta mapearAlerta(ResultSet rs)
-            throws SQLException {
-
-        return Alerta.builder()
-                .idAlerta(
-                        rs.getLong("id_alerta"))
-                .idIngrediente(
-                        rs.getLong("id_ingrediente"))
-                .tipoAlerta(
-                        rs.getString("tipo_alerta"))
-                .mensaje(
-                        rs.getString("mensaje"))
-                .activa(
-                        rs.getBoolean("activa"))
-                .fechaGeneracion(
-                        rs.getTimestamp("fecha_generacion")
-                                .toLocalDateTime())
-                .fechaResolucion(
-                        rs.getTimestamp("fecha_resolucion") == null
-                                ? null
-                                : rs.getTimestamp("fecha_resolucion")
-                                .toLocalDateTime())
-                .build();
-    }
-    @Override
-    public Optional<Alerta> buscarPorId(Long id) {
-
-        String sql = """
-            SELECT *
+    private static final String SELECT = """
+            SELECT id_alerta, id_ingrediente, tipo_alerta, mensaje, activa,
+                   fecha_generacion, fecha_resolucion
             FROM inventario.alerta
-            WHERE id_alerta = ?
             """;
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
+    private static final String SQL_POR_ID = SELECT + "WHERE id_alerta = ?";
+    private static final String SQL_LISTAR = SELECT + "ORDER BY fecha_generacion DESC";
+    private static final String SQL_ACTIVAS = SELECT + "WHERE activa ORDER BY fecha_generacion DESC";
+    private static final String SQL_POR_INGREDIENTE =
+            SELECT + "WHERE id_ingrediente = ? ORDER BY fecha_generacion DESC";
 
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, id);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                if (rs.next()) {
-
-                    return Optional.of(
-                            mapearAlerta(rs)
-                    );
-                }
-            }
-
-            return Optional.empty();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public List<Alerta> listarTodas() {
-
-        List<Alerta> alertas =
-                new ArrayList<>();
-
-        String sql = """
-            SELECT *
-            FROM inventario.alerta
-            ORDER BY fecha_generacion DESC
+    private static final String SQL_INSERTAR = """
+            INSERT INTO inventario.alerta (id_ingrediente, tipo_alerta, mensaje, activa)
+            VALUES (?, ?, ?, ?)
+            RETURNING id_alerta, fecha_generacion
             """;
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql);
-
-                ResultSet rs =
-                        ps.executeQuery()
-        ) {
-
-            while (rs.next()) {
-
-                alertas.add(
-                        mapearAlerta(rs)
-                );
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return alertas;
-    }
-
-    @Override
-    public List<Alerta> listarPorIngrediente(
-            Long idIngrediente) {
-
-        List<Alerta> alertas =
-                new ArrayList<>();
-
-        String sql = """
-            SELECT *
-            FROM inventario.alerta
-            WHERE id_ingrediente = ?
-            ORDER BY fecha_generacion DESC
+    /** Con el indice unico parcial uq_alerta_activa, un segundo aviso activo igual no se inserta. */
+    private static final String SQL_INSERTAR_SI_NO_EXISTE = """
+            INSERT INTO inventario.alerta (id_ingrediente, tipo_alerta, mensaje, activa)
+            VALUES (?, ?, ?, TRUE)
+            ON CONFLICT (id_ingrediente, tipo_alerta) WHERE activa DO NOTHING
+            RETURNING id_alerta, fecha_generacion
             """;
 
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, idIngrediente);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                while (rs.next()) {
-
-                    alertas.add(
-                            mapearAlerta(rs)
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return alertas;
-    }
+    private static final String SQL_RESOLVER = """
+            UPDATE inventario.alerta
+            SET activa = FALSE, fecha_resolucion = NOW()
+            WHERE id_alerta = ? AND activa
+            """;
 
     @Override
     public Alerta guardar(Alerta alerta) {
-
-        String sql = """
-            INSERT INTO inventario.alerta
-            (
-                id_ingrediente,
-                tipo_alerta,
-                mensaje,
-                activa
-            )
-            VALUES
-            (
-                ?, ?, ?, ?
-            )
-            RETURNING id_alerta
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, alerta.getIdIngrediente());
-            ps.setString(2, alerta.getTipoAlerta());
-            ps.setString(3, alerta.getMensaje());
-            ps.setBoolean(4, alerta.getActiva());
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                if (rs.next()) {
-
-                    alerta.setIdAlerta(
-                            rs.getLong("id_alerta")
-                    );
-                }
-            }
-
-            return alerta;
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public List<Alerta> listarActivas() {
-
-        List<Alerta> alertas =
-                new ArrayList<>();
-
-        String sql = """
-            SELECT *
-            FROM inventario.alerta
-            WHERE activa = true
-            ORDER BY fecha_generacion DESC
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql);
-
-                ResultSet rs =
-                        ps.executeQuery()
-        ) {
-
-            while (rs.next()) {
-
-                alertas.add(
-                        mapearAlerta(rs)
-                );
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return alertas;
-    }
-
-    @Override
-    public void resolver(Long idAlerta) {
-
-        String sql = """
-            UPDATE inventario.alerta
-            SET
-                activa = false,
-                fecha_resolucion = NOW()
-            WHERE id_alerta = ?
-            """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, idAlerta);
-
-            ps.executeUpdate();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
+        return Jdbc.consultarUno(SQL_INSERTAR,
+                        ps -> {
+                            asignarBase(ps, alerta);
+                            ps.setBoolean(4, alerta.getActiva() == null || alerta.getActiva());
+                        },
+                        rs -> registrarGenerada(alerta, rs))
+                .orElseThrow(() -> new IllegalStateException("El INSERT no devolvio el id de la alerta"));
     }
 
     @Override
     public boolean guardarSiNoExiste(Alerta alerta) {
+        return Jdbc.consultarUno(SQL_INSERTAR_SI_NO_EXISTE,
+                        ps -> asignarBase(ps, alerta),
+                        rs -> registrarGenerada(alerta, rs))
+                .isPresent();
+    }
 
-        String sql = """
-            INSERT INTO inventario.alerta (id_ingrediente, tipo_alerta, mensaje, activa)
-            VALUES (?, ?, ?, TRUE)
-            ON CONFLICT (id_ingrediente, tipo_alerta) WHERE activa DO NOTHING
-            RETURNING id_alerta
-            """;
+    @Override
+    public Optional<Alerta> buscarPorId(Long id) {
+        return Jdbc.consultarUno(SQL_POR_ID, ps -> ps.setLong(1, id), AlertaRepositoryPostgres::mapear);
+    }
 
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement ps = connection.prepareStatement(sql)) {
+    @Override
+    public List<Alerta> listarTodas() {
+        return Jdbc.consultar(SQL_LISTAR, Jdbc.SIN_PARAMETROS, AlertaRepositoryPostgres::mapear);
+    }
 
-            ps.setLong(1, alerta.getIdIngrediente());
-            ps.setString(2, alerta.getTipoAlerta());
-            ps.setString(3, alerta.getMensaje());
+    @Override
+    public List<Alerta> listarActivas() {
+        return Jdbc.consultar(SQL_ACTIVAS, Jdbc.SIN_PARAMETROS, AlertaRepositoryPostgres::mapear);
+    }
 
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    alerta.setIdAlerta(rs.getLong("id_alerta"));
-                    return true;
-                }
-                return false;
-            }
+    @Override
+    public List<Alerta> listarPorIngrediente(Long idIngrediente) {
+        return Jdbc.consultar(SQL_POR_INGREDIENTE, ps -> ps.setLong(1, idIngrediente),
+                AlertaRepositoryPostgres::mapear);
+    }
 
-        } catch (SQLException e) {
-            throw new RuntimeException("No se pudo guardar la alerta", e);
-        }
+    @Override
+    public void resolver(Long idAlerta) {
+        Jdbc.actualizar(SQL_RESOLVER, ps -> ps.setLong(1, idAlerta));
+    }
+
+    private static void asignarBase(PreparedStatement ps, Alerta alerta) throws SQLException {
+        ps.setLong(1, alerta.getIdIngrediente());
+        Jdbc.asignarEnum(ps, 2, alerta.getTipoAlerta());
+        ps.setString(3, alerta.getMensaje());
+    }
+
+    private static Alerta registrarGenerada(Alerta alerta, ResultSet rs) throws SQLException {
+        alerta.setIdAlerta(rs.getLong("id_alerta"));
+        alerta.setFechaGeneracion(Jdbc.leerInstante(rs, "fecha_generacion"));
+        return alerta;
+    }
+
+    private static Alerta mapear(ResultSet rs) throws SQLException {
+        return Alerta.builder()
+                .idAlerta(rs.getLong("id_alerta"))
+                .idIngrediente(rs.getLong("id_ingrediente"))
+                .tipoAlerta(Jdbc.leerEnum(rs, "tipo_alerta", TipoAlerta.class))
+                .mensaje(rs.getString("mensaje"))
+                .activa(rs.getBoolean("activa"))
+                .fechaGeneracion(Jdbc.leerInstante(rs, "fecha_generacion"))
+                .fechaResolucion(Jdbc.leerInstante(rs, "fecha_resolucion"))
+                .build();
     }
 }

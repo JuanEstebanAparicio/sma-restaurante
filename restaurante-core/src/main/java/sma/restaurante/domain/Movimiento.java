@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import sma.restaurante.domain.enums.TipoMovimiento;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -20,7 +21,7 @@ public class Movimiento {
 
     private Long idLote;
 
-    private String tipoMovimiento;
+    private TipoMovimiento tipoMovimiento;
 
     private BigDecimal cantidad;
 

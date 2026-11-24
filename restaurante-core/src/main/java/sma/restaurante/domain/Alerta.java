@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import sma.restaurante.domain.enums.TipoAlerta;
 
 import java.time.LocalDateTime;
 
@@ -17,7 +18,7 @@ public class Alerta {
 
     private Long idIngrediente;
 
-    private String tipoAlerta;
+    private TipoAlerta tipoAlerta;
 
     private String mensaje;
 

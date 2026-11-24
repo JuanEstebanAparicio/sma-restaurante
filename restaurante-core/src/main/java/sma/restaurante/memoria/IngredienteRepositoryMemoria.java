@@ -1,6 +1,7 @@
 package sma.restaurante.memoria;
 
 import sma.restaurante.domain.Ingrediente;
+import sma.restaurante.domain.enums.EstadoIngrediente;
 import sma.restaurante.repository.IngredienteRepository;
 
 import java.util.ArrayList;
@@ -47,7 +48,7 @@ public class IngredienteRepositoryMemoria implements IngredienteRepository {
     public void eliminar(Long id) {
         Ingrediente ingrediente = datos.get(id);
         if (ingrediente != null) {
-            ingrediente.setEstado("INACTIVO");
+            ingrediente.setEstado(EstadoIngrediente.INACTIVO);
         }
     }
 }

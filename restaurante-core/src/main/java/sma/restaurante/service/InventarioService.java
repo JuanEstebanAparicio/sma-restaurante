@@ -13,9 +13,10 @@ import sma.restaurante.repository.LoteRepository;
 import sma.restaurante.repository.MovimientoRepository;
 import sma.restaurante.repository.Transaccion;
 import sma.restaurante.util.NormalizadorTexto;
+import sma.restaurante.domain.enums.EstadoIngrediente;
+import sma.restaurante.util.Tiempo;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 
 public class InventarioService {
@@ -72,7 +73,7 @@ public class InventarioService {
                     Movimiento.builder()
                             .idIngrediente(lote.getIdIngrediente())
                             .idLote(loteGuardado.getIdLote())
-                            .tipoMovimiento(TipoMovimiento.ENTRADA.name())
+                            .tipoMovimiento(TipoMovimiento.ENTRADA)
                             .cantidad(lote.getCantidad())
                             .motivo("REGISTRO DE LOTE")
                             .build());
@@ -100,7 +101,7 @@ public class InventarioService {
 
         return ReglasStock.stockVigente(
                 loteRepository.listarPorIngrediente(idIngrediente),
-                LocalDate.now());
+                Tiempo.hoy());
     }
 
     public boolean consultarDisponibilidad(
@@ -160,7 +161,7 @@ public class InventarioService {
         }
 
         if (lote.getFechaIngreso() == null) {
-            lote.setFechaIngreso(LocalDate.now());
+            lote.setFechaIngreso(Tiempo.hoy());
         }
 
         if (lote.getFechaVencimiento() != null
@@ -176,8 +177,8 @@ public class InventarioService {
     private void normalizarIngrediente(
             Ingrediente ingrediente) {
 
-        if (ingrediente.getEstado() == null || ingrediente.getEstado().isBlank()) {
-            ingrediente.setEstado("ACTIVO");
+        if (ingrediente.getEstado() == null) {
+            ingrediente.setEstado(EstadoIngrediente.ACTIVO);
         }
         if (ingrediente.getStockMinimo() == null) {
             ingrediente.setStockMinimo(BigDecimal.ZERO);
@@ -190,9 +191,5 @@ public class InventarioService {
         ingrediente.setCategoria(
                 NormalizadorTexto.normalizar(
                         ingrediente.getCategoria()));
-
-        ingrediente.setEstado(
-                NormalizadorTexto.normalizar(
-                        ingrediente.getEstado()));
     }
 }

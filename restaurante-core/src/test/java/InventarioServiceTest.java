@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.domain.Lote;
 import sma.restaurante.domain.Movimiento;
+import sma.restaurante.domain.enums.EstadoIngrediente;
+import sma.restaurante.domain.enums.TipoMovimiento;
 import sma.restaurante.exception.IngredienteDuplicadoException;
 import sma.restaurante.exception.IngredienteNoEncontradoException;
 import sma.restaurante.exception.ValidacionInventarioException;
@@ -13,6 +15,7 @@ import sma.restaurante.memoria.LoteRepositoryMemoria;
 import sma.restaurante.memoria.MovimientoRepositoryMemoria;
 import sma.restaurante.memoria.TransaccionMemoria;
 import sma.restaurante.service.InventarioService;
+import sma.restaurante.util.Tiempo;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -56,7 +59,7 @@ class InventarioServiceTest {
         Ingrediente pollo = pollo();
 
         assertEquals("POLLO", pollo.getNombre());
-        assertEquals("ACTIVO", pollo.getEstado());
+        assertEquals(EstadoIngrediente.ACTIVO, pollo.getEstado());
         assertEquals(0, BigDecimal.ZERO.compareTo(pollo.getStockMinimo()));
     }
 
@@ -81,7 +84,7 @@ class InventarioServiceTest {
 
         List<Movimiento> historial = movimientos.listarPorIngrediente(pollo.getIdIngrediente());
         assertEquals(1, historial.size());
-        assertEquals("ENTRADA", historial.get(0).getTipoMovimiento());
+        assertEquals(TipoMovimiento.ENTRADA, historial.get(0).getTipoMovimiento());
         assertEquals(guardado.getIdLote(), historial.get(0).getIdLote());
         assertEquals(1, transaccion.ejecuciones());
     }
@@ -93,7 +96,7 @@ class InventarioServiceTest {
         Lote guardado = servicio.registrarLote(loteDe(pollo).build());
 
         assertEquals(0, new BigDecimal("10").compareTo(guardado.getCantidadDisponible()));
-        assertEquals(LocalDate.now(), guardado.getFechaIngreso());
+        assertEquals(Tiempo.hoy(), guardado.getFechaIngreso());
     }
 
     @Test
@@ -123,8 +126,8 @@ class InventarioServiceTest {
 
         assertThrows(ValidacionInventarioException.class, () ->
                 servicio.registrarLote(loteDe(pollo)
-                        .fechaIngreso(LocalDate.now())
-                        .fechaVencimiento(LocalDate.now().minusDays(1))
+                        .fechaIngreso(Tiempo.hoy())
+                        .fechaVencimiento(Tiempo.hoy().minusDays(1))
                         .build()));
     }
 
@@ -133,11 +136,11 @@ class InventarioServiceTest {
         Ingrediente pollo = pollo();
         lotes.guardar(loteDe(pollo)
                 .cantidadDisponible(new BigDecimal("10"))
-                .fechaVencimiento(LocalDate.now().minusDays(1))
+                .fechaVencimiento(Tiempo.hoy().minusDays(1))
                 .build());
         lotes.guardar(loteDe(pollo)
                 .cantidadDisponible(new BigDecimal("4"))
-                .fechaVencimiento(LocalDate.now().plusDays(10))
+                .fechaVencimiento(Tiempo.hoy().plusDays(10))
                 .build());
 
         assertEquals(0, new BigDecimal("4").compareTo(servicio.obtenerStockDisponible(pollo.getIdIngrediente())));

@@ -6,6 +6,8 @@ import sma.restaurante.domain.Alerta;
 import sma.restaurante.domain.Ingrediente;
 import sma.restaurante.domain.Lote;
 import sma.restaurante.domain.Movimiento;
+import sma.restaurante.domain.enums.EstadoIngrediente;
+import sma.restaurante.domain.enums.TipoMovimiento;
 import sma.restaurante.memoria.AlertaRepositoryMemoria;
 import sma.restaurante.memoria.IngredienteRepositoryMemoria;
 import sma.restaurante.memoria.LoteRepositoryMemoria;
@@ -52,7 +54,7 @@ class AlertaServiceTest {
                 .nombre(nombre)
                 .unidadMedida("KG")
                 .stockMinimo(new BigDecimal(minimo))
-                .estado("ACTIVO")
+                .estado(EstadoIngrediente.ACTIVO)
                 .build());
     }
 
@@ -69,7 +71,7 @@ class AlertaServiceTest {
     private void movimiento(Ingrediente ingrediente, String tipo, String cantidad, LocalDateTime fecha) {
         movimientos.guardar(Movimiento.builder()
                 .idIngrediente(ingrediente.getIdIngrediente())
-                .tipoMovimiento(tipo)
+                .tipoMovimiento(TipoMovimiento.valueOf(tipo))
                 .cantidad(new BigDecimal(cantidad))
                 .fechaMovimiento(fecha)
                 .motivo("prueba")
@@ -77,7 +79,7 @@ class AlertaServiceTest {
     }
 
     private List<String> tipos(List<Alerta> lista) {
-        return lista.stream().map(Alerta::getTipoAlerta).toList();
+        return lista.stream().map(a -> a.getTipoAlerta().name()).toList();
     }
 
     // ---------- alertas por stock y vencimiento ----------
@@ -127,7 +129,7 @@ class AlertaServiceTest {
     @Test
     void ingredienteInactivoNoGeneraAlertas() {
         Ingrediente pollo = ingrediente("POLLO", "5");
-        pollo.setEstado("INACTIVO");
+        pollo.setEstado(EstadoIngrediente.INACTIVO);
 
         assertTrue(servicio.evaluar().isEmpty());
     }

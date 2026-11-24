@@ -1,299 +1,45 @@
 package sma.restaurante.repository.impl;
 
-import sma.restaurante.datasource.DatabaseConnection;
+import sma.restaurante.datasource.Jdbc;
 import sma.restaurante.domain.Movimiento;
-import sma.restaurante.repository.MovimientoRepository;
 import sma.restaurante.domain.ResumenConsumo;
-import java.util.HashMap;
-import java.util.Map;
+import sma.restaurante.domain.enums.TipoMovimiento;
+import sma.restaurante.repository.MovimientoRepository;
+import sma.restaurante.util.Tiempo;
 
-import java.sql.*;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
-public class MovimientoRepositoryPostgres
-        implements MovimientoRepository {
+public class MovimientoRepositoryPostgres implements MovimientoRepository {
 
-    private Movimiento mapearMovimiento(ResultSet rs) throws SQLException {
+    private static final String SELECT = """
+            SELECT id_movimiento, id_ingrediente, id_lote, tipo_movimiento,
+                   cantidad, fecha_movimiento, motivo
+            FROM inventario.movimiento
+            """;
 
-        long idLote = rs.getLong("id_lote");
-        boolean sinLote = rs.wasNull();
+    private static final String SQL_LISTAR = SELECT + "ORDER BY fecha_movimiento DESC";
+    private static final String SQL_POR_ID = SELECT + "WHERE id_movimiento = ?";
+    private static final String SQL_POR_INGREDIENTE =
+            SELECT + "WHERE id_ingrediente = ? ORDER BY fecha_movimiento DESC";
+    private static final String SQL_POR_TIPO =
+            SELECT + "WHERE tipo_movimiento = ? ORDER BY fecha_movimiento DESC";
+    private static final String SQL_POR_PERIODO =
+            SELECT + "WHERE fecha_movimiento BETWEEN ? AND ? ORDER BY fecha_movimiento DESC";
 
-        return Movimiento.builder()
-                .idMovimiento(rs.getLong("id_movimiento"))
-                .idIngrediente(rs.getLong("id_ingrediente"))
-                .idLote(sinLote ? null : idLote)
-                .tipoMovimiento(rs.getString("tipo_movimiento"))
-                .cantidad(rs.getBigDecimal("cantidad"))
-                .fechaMovimiento(rs.getTimestamp("fecha_movimiento").toLocalDateTime())
-                .motivo(rs.getString("motivo"))
-                .build();
-    }
-
-    @Override
-    public Movimiento guardar(Movimiento movimiento) {
-
-        String sql = """
+    private static final String SQL_INSERTAR = """
             INSERT INTO inventario.movimiento
                 (id_ingrediente, id_lote, tipo_movimiento, cantidad, fecha_movimiento, motivo)
             VALUES (?, ?, ?, ?, ?, ?)
             RETURNING id_movimiento
             """;
 
-        LocalDateTime fecha = movimiento.getFechaMovimiento() != null
-                ? movimiento.getFechaMovimiento()
-                : LocalDateTime.now();
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement ps = connection.prepareStatement(sql)) {
-
-            ps.setLong(1, movimiento.getIdIngrediente());
-
-            if (movimiento.getIdLote() != null) {
-                ps.setLong(2, movimiento.getIdLote());
-            } else {
-                ps.setNull(2, Types.BIGINT);
-            }
-
-            ps.setString(3, movimiento.getTipoMovimiento());
-            ps.setBigDecimal(4, movimiento.getCantidad());
-            ps.setTimestamp(5, Timestamp.valueOf(fecha));
-            ps.setString(6, movimiento.getMotivo());
-
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    movimiento.setIdMovimiento(rs.getLong("id_movimiento"));
-                    movimiento.setFechaMovimiento(fecha);
-                }
-            }
-
-            return movimiento;
-
-        } catch (SQLException e) {
-            throw new RuntimeException("No se pudo guardar el movimiento", e);
-        }
-    }
-
-    @Override
-    public Optional<Movimiento> buscarPorId(
-            Long id) {
-
-        String sql = """
-                SELECT *
-                FROM inventario.movimiento
-                WHERE id_movimiento = ?
-                """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, id);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                if (rs.next()) {
-
-                    return Optional.of(
-                            mapearMovimiento(rs)
-                    );
-                }
-            }
-
-            return Optional.empty();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public List<Movimiento> listarTodos() {
-
-        List<Movimiento> movimientos =
-                new ArrayList<>();
-
-        String sql = """
-                SELECT *
-                FROM inventario.movimiento
-                ORDER BY fecha_movimiento DESC
-                """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql);
-
-                ResultSet rs =
-                        ps.executeQuery()
-        ) {
-
-            while (rs.next()) {
-
-                movimientos.add(
-                        mapearMovimiento(rs)
-                );
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return movimientos;
-    }
-
-    @Override
-    public List<Movimiento> listarPorIngrediente(
-            Long idIngrediente) {
-
-        List<Movimiento> movimientos =
-                new ArrayList<>();
-
-        String sql = """
-                SELECT *
-                FROM inventario.movimiento
-                WHERE id_ingrediente = ?
-                ORDER BY fecha_movimiento DESC
-                """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setLong(1, idIngrediente);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                while (rs.next()) {
-
-                    movimientos.add(
-                            mapearMovimiento(rs)
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return movimientos;
-    }
-
-    @Override
-    public List<Movimiento> listarPorTipo(
-            String tipo) {
-
-        List<Movimiento> movimientos =
-                new ArrayList<>();
-
-        String sql = """
-                SELECT *
-                FROM inventario.movimiento
-                WHERE tipo_movimiento = ?
-                ORDER BY fecha_movimiento DESC
-                """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setString(1, tipo);
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                while (rs.next()) {
-
-                    movimientos.add(
-                            mapearMovimiento(rs)
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return movimientos;
-    }
-
-    @Override
-    public List<Movimiento> listarPorPeriodo(
-            LocalDateTime desde,
-            LocalDateTime hasta) {
-
-        List<Movimiento> movimientos =
-                new ArrayList<>();
-
-        String sql = """
-                SELECT *
-                FROM inventario.movimiento
-                WHERE fecha_movimiento
-                    BETWEEN ? AND ?
-                ORDER BY fecha_movimiento
-                """;
-
-        try (
-                Connection connection =
-                        DatabaseConnection.getConnection();
-
-                PreparedStatement ps =
-                        connection.prepareStatement(sql)
-        ) {
-
-            ps.setTimestamp(
-                    1,
-                    Timestamp.valueOf(desde));
-
-            ps.setTimestamp(
-                    2,
-                    Timestamp.valueOf(hasta));
-
-            try (ResultSet rs =
-                         ps.executeQuery()) {
-
-                while (rs.next()) {
-
-                    movimientos.add(
-                            mapearMovimiento(rs)
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(e);
-        }
-
-        return movimientos;
-    }
-
-    @Override
-    public Map<Long, ResumenConsumo> resumenConsumo(LocalDateTime desde, LocalDateTime hasta) {
-
-        String sql = """
+    private static final String SQL_RESUMEN_CONSUMO = """
             SELECT id_ingrediente,
                    COALESCE(SUM(cantidad) FILTER (
                        WHERE tipo_movimiento = 'CONSUMO'
@@ -303,28 +49,90 @@ public class MovimientoRepositoryPostgres
             GROUP BY id_ingrediente
             """;
 
+    @Override
+    public Movimiento guardar(Movimiento movimiento) {
+
+        LocalDateTime fecha = movimiento.getFechaMovimiento() != null
+                ? movimiento.getFechaMovimiento()
+                : Tiempo.ahora();
+
+        return Jdbc.consultarUno(SQL_INSERTAR,
+                        ps -> {
+                            ps.setLong(1, movimiento.getIdIngrediente());
+                            Jdbc.asignarLong(ps, 2, movimiento.getIdLote());
+                            Jdbc.asignarEnum(ps, 3, movimiento.getTipoMovimiento());
+                            ps.setBigDecimal(4, movimiento.getCantidad());
+                            Jdbc.asignarInstante(ps, 5, fecha);
+                            ps.setString(6, movimiento.getMotivo());
+                        },
+                        rs -> {
+                            movimiento.setIdMovimiento(rs.getLong("id_movimiento"));
+                            movimiento.setFechaMovimiento(fecha);
+                            return movimiento;
+                        })
+                .orElseThrow(() -> new IllegalStateException("El INSERT no devolvio el id del movimiento"));
+    }
+
+    @Override
+    public Optional<Movimiento> buscarPorId(Long id) {
+        return Jdbc.consultarUno(SQL_POR_ID, ps -> ps.setLong(1, id), MovimientoRepositoryPostgres::mapear);
+    }
+
+    @Override
+    public List<Movimiento> listarTodos() {
+        return Jdbc.consultar(SQL_LISTAR, Jdbc.SIN_PARAMETROS, MovimientoRepositoryPostgres::mapear);
+    }
+
+    @Override
+    public List<Movimiento> listarPorIngrediente(Long idIngrediente) {
+        return Jdbc.consultar(SQL_POR_INGREDIENTE, ps -> ps.setLong(1, idIngrediente),
+                MovimientoRepositoryPostgres::mapear);
+    }
+
+    @Override
+    public List<Movimiento> listarPorTipo(TipoMovimiento tipo) {
+        return Jdbc.consultar(SQL_POR_TIPO, ps -> Jdbc.asignarEnum(ps, 1, tipo),
+                MovimientoRepositoryPostgres::mapear);
+    }
+
+    @Override
+    public List<Movimiento> listarPorPeriodo(LocalDateTime desde, LocalDateTime hasta) {
+        return Jdbc.consultar(SQL_POR_PERIODO,
+                ps -> {
+                    Jdbc.asignarInstante(ps, 1, desde);
+                    Jdbc.asignarInstante(ps, 2, hasta);
+                },
+                MovimientoRepositoryPostgres::mapear);
+    }
+
+    @Override
+    public Map<Long, ResumenConsumo> resumenConsumo(LocalDateTime desde, LocalDateTime hasta) {
+
         Map<Long, ResumenConsumo> resumenes = new HashMap<>();
 
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement ps = connection.prepareStatement(sql)) {
+        Jdbc.consultar(SQL_RESUMEN_CONSUMO,
+                ps -> {
+                    Jdbc.asignarInstante(ps, 1, desde);
+                    Jdbc.asignarInstante(ps, 2, hasta);
+                },
+                rs -> resumenes.put(
+                        rs.getLong("id_ingrediente"),
+                        new ResumenConsumo(
+                                rs.getBigDecimal("consumo_total"),
+                                Jdbc.leerInstante(rs, "primer_movimiento"))));
 
-            ps.setTimestamp(1, Timestamp.valueOf(desde));
-            ps.setTimestamp(2, Timestamp.valueOf(hasta));
+        return resumenes;
+    }
 
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    resumenes.put(
-                            rs.getLong("id_ingrediente"),
-                            new ResumenConsumo(
-                                    rs.getBigDecimal("consumo_total"),
-                                    rs.getTimestamp("primer_movimiento").toLocalDateTime()));
-                }
-            }
-
-            return resumenes;
-
-        } catch (SQLException e) {
-            throw new RuntimeException("No se pudo calcular el resumen de consumo", e);
-        }
+    private static Movimiento mapear(ResultSet rs) throws SQLException {
+        return Movimiento.builder()
+                .idMovimiento(rs.getLong("id_movimiento"))
+                .idIngrediente(rs.getLong("id_ingrediente"))
+                .idLote(Jdbc.leerLong(rs, "id_lote"))
+                .tipoMovimiento(Jdbc.leerEnum(rs, "tipo_movimiento", TipoMovimiento.class))
+                .cantidad(rs.getBigDecimal("cantidad"))
+                .fechaMovimiento(Jdbc.leerInstante(rs, "fecha_movimiento"))
+                .motivo(rs.getString("motivo"))
+                .build();
     }
 }

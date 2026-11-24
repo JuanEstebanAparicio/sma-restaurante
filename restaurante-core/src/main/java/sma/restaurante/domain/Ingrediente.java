@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import sma.restaurante.domain.enums.EstadoIngrediente;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,7 +27,7 @@ public class Ingrediente {
 
     private BigDecimal stockMinimo;
 
-    private String estado;
+    private EstadoIngrediente estado;
 
     private String observaciones;
 

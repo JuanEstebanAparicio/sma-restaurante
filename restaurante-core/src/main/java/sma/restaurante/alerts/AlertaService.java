@@ -10,6 +10,8 @@ import sma.restaurante.prediction.Pronostico;
 import sma.restaurante.repository.AlertaRepository;
 import sma.restaurante.repository.IngredienteRepository;
 import sma.restaurante.repository.LoteRepository;
+import java.util.EnumSet;
+import sma.restaurante.domain.enums.EstadoIngrediente;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -26,12 +28,12 @@ public class AlertaService {
     static final int DIAS_AVISO_VENCIMIENTO = 5;
 
     /** Solo se cierran automaticamente las alertas que este servicio sabe calcular. */
-    private static final Set<String> TIPOS_GESTIONADOS = Set.of(
-            TipoAlerta.AGOTADO.name(),
-            TipoAlerta.BAJO_STOCK.name(),
-            TipoAlerta.POR_VENCER.name(),
-            TipoAlerta.VENCIDO.name(),
-            TipoAlerta.AGOTAMIENTO_PREDICTIVO.name());
+    private static final Set<TipoAlerta> TIPOS_GESTIONADOS = EnumSet.of(
+            TipoAlerta.AGOTADO,
+            TipoAlerta.BAJO_STOCK,
+            TipoAlerta.POR_VENCER,
+            TipoAlerta.VENCIDO,
+            TipoAlerta.AGOTAMIENTO_PREDICTIVO);
 
     private final IngredienteRepository ingredienteRepository;
     private final LoteRepository loteRepository;
@@ -63,7 +65,7 @@ public class AlertaService {
                 .collect(Collectors.groupingBy(Lote::getIdIngrediente));
 
         List<Ingrediente> activos = ingredienteRepository.listarTodos().stream()
-                .filter(i -> !"INACTIVO".equals(i.getEstado()))
+                .filter(i -> i.getEstado() != EstadoIngrediente.INACTIVO)
                 .toList();
 
         List<Alerta> alertas = new ArrayList<>();
@@ -149,7 +151,7 @@ public class AlertaService {
     private static Alerta nueva(Long idIngrediente, TipoAlerta tipo, String mensaje) {
         return Alerta.builder()
                 .idIngrediente(idIngrediente)
-                .tipoAlerta(tipo.name())
+                .tipoAlerta(tipo)
                 .mensaje(mensaje)
                 .activa(true)
                 .build();

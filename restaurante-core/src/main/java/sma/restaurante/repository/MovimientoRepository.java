@@ -2,6 +2,7 @@ package sma.restaurante.repository;
 
 import sma.restaurante.domain.Movimiento;
 import sma.restaurante.domain.ResumenConsumo;
+import sma.restaurante.domain.enums.TipoMovimiento;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,7 +19,7 @@ public interface MovimientoRepository {
 
     List<Movimiento> listarPorIngrediente(Long idIngrediente);
 
-    List<Movimiento> listarPorTipo(String tipo);
+    List<Movimiento> listarPorTipo(TipoMovimiento tipo);
 
     List<Movimiento> listarPorPeriodo(
             LocalDateTime desde,
