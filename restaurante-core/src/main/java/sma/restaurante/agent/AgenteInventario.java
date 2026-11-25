@@ -127,4 +127,22 @@ public class AgenteInventario extends Agent {
 
         LOG.info(getLocalName() + " finalizado");
     }
+
+    private final java.util.concurrent.atomic.AtomicBoolean recalculoPendiente =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public void solicitarRecalculoInmediato() {
+        if (recalculoPendiente.compareAndSet(false, true)) {
+            addBehaviour(new jade.core.behaviours.OneShotBehaviour(this) {
+                @Override
+                public void action() {
+                    try {
+                        ejecutarCicloMonitoreo();
+                    } finally {
+                        recalculoPendiente.set(false);
+                    }
+                }
+            });
+        }
+    }
 }

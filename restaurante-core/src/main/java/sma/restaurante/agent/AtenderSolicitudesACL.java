@@ -122,6 +122,9 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
                 );
                 LOG.info("Reserva exitosa para el pedido " + resultado.idPedido()
                         + ": " + resultado.mensaje());
+                if (myAgent instanceof AgenteInventario agenteInventario) {
+                    agenteInventario.solicitarRecalculoInmediato();
+                }
                 return;
             }
 
