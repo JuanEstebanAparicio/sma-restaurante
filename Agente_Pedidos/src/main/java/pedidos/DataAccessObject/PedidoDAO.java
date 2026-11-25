@@ -1,6 +1,7 @@
 package pedidos.DataAccessObject;
 
 import pedidos.Config.ConexionBD;
+import pedidos.model.IngredienteRequerido;
 import pedidos.model.PedidoPendiente;
 import pedidos.model.PlatilloDetalle;
 
@@ -13,97 +14,139 @@ import java.util.List;
 
 public class PedidoDAO {
 
-    private Connection getConnection() throws SQLException {
-        // Reemplaza por: return DatabaseConnection.getConnection(); si quieres usar la de restaurante-core
-        return ConexionBD.obtenerConexion();
-    }
-
-    public List<PedidoPendiente> obtenerPedidosPendientes() {
+    public List<PedidoPendiente> obtenerPedidosRecibidos() {
         List<PedidoPendiente> pedidos = new ArrayList<>();
 
         String sqlPedidos = """
-                SELECT id_pedido, mesa
+                SELECT id_pedido, observaciones
                 FROM pedidos.pedido
-                WHERE estado = 'PENDIENTE'
+                WHERE estado = 'RECIBIDO'
                 ORDER BY id_pedido ASC
                 """;
 
-        String sqlPlatillos = """
-                SELECT p.id_platillo, p.nombre, pp.cantidad, p.precio
-                FROM pedidos.pedido_platillo pp
-                JOIN pedidos.platillo p ON pp.id_platillo = p.id_platillo
-                WHERE pp.id_pedido = ?
+        String sqlDetalles = """
+                SELECT p.id_platillo, p.nombre, pd.cantidad, pd.precio_unitario
+                FROM pedidos.pedido_detalle pd
+                JOIN pedidos.platillo p ON pd.id_platillo = p.id_platillo
+                WHERE pd.id_pedido = ?
                 """;
 
-        String sqlIngredientes = """
+        String sqlRecetaIngredientes = """
                 SELECT i.id_ingrediente,
                        i.nombre AS ingrediente_nombre,
-                       SUM(pi.cantidad_requerida * pp.cantidad) AS total_requerido
-                FROM pedidos.pedido_platillo pp
-                JOIN pedidos.platillo_ingrediente pi ON pp.id_platillo = pi.id_platillo
+                       i.unidad_medida,
+                       SUM(pi.cantidad * pd.cantidad) AS total_requerido
+                FROM pedidos.pedido_detalle pd
+                JOIN pedidos.platillo_ingrediente pi ON pd.id_platillo = pi.id_platillo
                 JOIN inventario.ingrediente i ON pi.id_ingrediente = i.id_ingrediente
-                WHERE pp.id_pedido = ?
-                GROUP BY i.id_ingrediente, i.nombre
+                WHERE pd.id_pedido = ?
+                GROUP BY i.id_ingrediente, i.nombre, i.unidad_medida
                 ORDER BY i.id_ingrediente ASC
                 """;
 
-        try (Connection conn = getConnection();
+        try (Connection conn = ConexionBD.obtenerConexion();
              PreparedStatement psPedidos = conn.prepareStatement(sqlPedidos);
              ResultSet rsPedidos = psPedidos.executeQuery()) {
 
             while (rsPedidos.next()) {
-                int pedidoId = rsPedidos.getInt("id_pedido");
-                String mesa = rsPedidos.getString("mesa");
-                PedidoPendiente pedido = new PedidoPendiente(pedidoId, mesa);
+                long idPedido = rsPedidos.getLong("id_pedido");
+                String observaciones = rsPedidos.getString("observaciones");
+                PedidoPendiente pedido = new PedidoPendiente(idPedido, observaciones);
 
-                try (PreparedStatement psPlat = conn.prepareStatement(sqlPlatillos)) {
-                    psPlat.setInt(1, pedidoId);
-                    try (ResultSet rsPlat = psPlat.executeQuery()) {
-                        while (rsPlat.next()) {
+                try (PreparedStatement psDet = conn.prepareStatement(sqlDetalles)) {
+                    psDet.setLong(1, idPedido);
+                    try (ResultSet rsDet = psDet.executeQuery()) {
+                        while (rsDet.next()) {
                             pedido.agregarPlatillo(new PlatilloDetalle(
-                                    rsPlat.getInt("id_platillo"),
-                                    rsPlat.getString("nombre"),
-                                    rsPlat.getInt("cantidad"),
-                                    rsPlat.getDouble("precio")
+                                    rsDet.getLong("id_platillo"),
+                                    rsDet.getString("nombre"),
+                                    rsDet.getInt("cantidad"),
+                                    rsDet.getDouble("precio_unitario")
                             ));
                         }
                     }
                 }
 
-                try (PreparedStatement psIng = conn.prepareStatement(sqlIngredientes)) {
-                    psIng.setInt(1, pedidoId);
+                try (PreparedStatement psIng = conn.prepareStatement(sqlRecetaIngredientes)) {
+                    psIng.setLong(1, idPedido);
                     try (ResultSet rsIng = psIng.executeQuery()) {
                         while (rsIng.next()) {
-                            pedido.agregarRequerimientoIngrediente(
-                                    rsIng.getInt("id_ingrediente"),
+                            pedido.agregarIngrediente(
+                                    rsIng.getLong("id_ingrediente"),
                                     rsIng.getString("ingrediente_nombre"),
+                                    rsIng.getString("unidad_medida"),
                                     rsIng.getDouble("total_requerido")
                             );
                         }
                     }
                 }
 
-                if (!pedido.getPlatillos().isEmpty() && !pedido.getIngredientesTotales().isEmpty()) {
+                if (!pedido.getPlatillos().isEmpty() && !pedido.getIngredientes().isEmpty()) {
                     pedidos.add(pedido);
                 }
             }
 
         } catch (SQLException e) {
-            System.err.println("[PedidoDAO] Error al leer pedidos pendientes: " + e.getMessage());
+            System.err.println("[PedidoDAO] Error consultando pedidos recibidos: " + e.getMessage());
         }
 
         return pedidos;
     }
 
-    public void actualizarEstado(int pedidoId, String nuevoEstado) {
+    public void registrarSnapshotYValidar(PedidoPendiente pedido) {
+        String sqlInsertSnapshot = """
+                INSERT INTO pedidos.pedido_ingrediente (id_pedido, id_ingrediente, cantidad_requerida, unidad_medida)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (id_pedido, id_ingrediente)
+                DO UPDATE SET cantidad_requerida = EXCLUDED.cantidad_requerida,
+                              unidad_medida = EXCLUDED.unidad_medida
+                """;
+
+        String sqlUpdatePedido = """
+                UPDATE pedidos.pedido
+                SET estado = 'VALIDANDO_INVENTARIO',
+                    total = ?
+                WHERE id_pedido = ?
+                """;
+
+        try (Connection conn = ConexionBD.obtenerConexion()) {
+            conn.setAutoCommit(false);
+
+            try (PreparedStatement psSnap = conn.prepareStatement(sqlInsertSnapshot);
+                 PreparedStatement psPed = conn.prepareStatement(sqlUpdatePedido)) {
+
+                for (IngredienteRequerido ing : pedido.getIngredientes().values()) {
+                    psSnap.setLong(1, pedido.getIdPedido());
+                    psSnap.setLong(2, ing.getIdIngrediente());
+                    psSnap.setDouble(3, ing.getCantidadRequerida());
+                    psSnap.setString(4, ing.getUnidadMedida());
+                    psSnap.addBatch();
+                }
+                psSnap.executeBatch();
+
+                psPed.setDouble(1, pedido.calcularTotal());
+                psPed.setLong(2, pedido.getIdPedido());
+                psPed.executeUpdate();
+
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            System.err.println("[PedidoDAO] Error guardando snapshot del pedido #" + pedido.getIdPedido() + ": " + e.getMessage());
+        }
+    }
+
+    public void actualizarEstado(long idPedido, String nuevoEstado) {
         String sql = "UPDATE pedidos.pedido SET estado = ? WHERE id_pedido = ?";
-        try (Connection conn = getConnection();
+        try (Connection conn = ConexionBD.obtenerConexion();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, nuevoEstado);
-            ps.setInt(2, pedidoId);
+            ps.setLong(2, idPedido);
             ps.executeUpdate();
         } catch (SQLException e) {
-            System.err.println("[PedidoDAO] Error al actualizar estado del pedido #" + pedidoId + ": " + e.getMessage());
+            System.err.println("[PedidoDAO] Error actualizando estado del pedido #" + idPedido + ": " + e.getMessage());
         }
     }
 }
