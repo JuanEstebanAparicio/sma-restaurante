@@ -5,12 +5,10 @@ import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
-
-import sma.restaurante.service.ReservaService;
+import jade.domain.FIPANames;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class AtenderSolicitudesACL extends CyclicBehaviour {
@@ -19,7 +17,9 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
             Logger.getLogger(AtenderSolicitudesACL.class.getName());
 
     private static final String ONTOLOGIA = "Restaurante";
-    private static final String PROTOCOLO = "FIPA-Request";
+
+    private static final String PROTOCOLO =
+            FIPANames.InteractionProtocol.FIPA_REQUEST;
 
     private static final Pattern PATRON_RESERVAR = Pattern.compile(
             "^\\(\\s*reservar\\s+(?:pedido_)?(\\d+)"
@@ -28,15 +28,10 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
     );
 
     private final MessageTemplate plantilla;
-    private final ReservaService reservaService;
 
-    public AtenderSolicitudesACL(
-            Agent agente,
-            ReservaService reservaService) {
+    public AtenderSolicitudesACL(Agent agente) {
 
         super(agente);
-
-        this.reservaService = reservaService;
 
         plantilla = MessageTemplate.and(
                 MessageTemplate.MatchProtocol(PROTOCOLO),
@@ -59,14 +54,11 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
 
     private void procesarSolicitud(ACLMessage solicitud) {
 
-        // Preparar respuesta asociada a la solicitud original.
-        ACLMessage respuesta = crearRespuesta(solicitud);
-
-        // Validar ontología.
+        // 1. Validar ontología.
         if (!ONTOLOGIA.equals(solicitud.getOntology())) {
 
-            enviarRespuesta(
-                    respuesta,
+            responder(
+                    solicitud,
                     ACLMessage.NOT_UNDERSTOOD,
                     "(ontologia_no_soportada)"
             );
@@ -74,11 +66,11 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
             return;
         }
 
-        // Validar emisor.
+        // 2. Validar emisor.
         if (solicitud.getSender() == null) {
 
-            enviarRespuesta(
-                    respuesta,
+            responder(
+                    solicitud,
                     ACLMessage.NOT_UNDERSTOOD,
                     "(emisor_no_identificado)"
             );
@@ -86,13 +78,13 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
             return;
         }
 
-        // Validar contenido.
+        // 3. Validar contenido.
         String contenido = solicitud.getContent();
 
-        if (contenido == null) {
+        if (contenido == null || contenido.trim().isEmpty()) {
 
-            enviarRespuesta(
-                    respuesta,
+            responder(
+                    solicitud,
                     ACLMessage.NOT_UNDERSTOOD,
                     "(contenido_vacio)"
             );
@@ -100,25 +92,22 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
             return;
         }
 
-        Matcher matcher =
-                PATRON_RESERVAR.matcher(contenido.trim());
+        Matcher matcher = PATRON_RESERVAR.matcher(contenido.trim());
 
         if (!matcher.matches()) {
 
-            enviarRespuesta(
-                    respuesta,
+            responder(
+                    solicitud,
                     ACLMessage.NOT_UNDERSTOOD,
                     "(formato_no_reconocido)"
             );
 
-            LOG.warning(
-                    "Contenido ACL no reconocido: " + contenido
-            );
+            LOG.warning("Contenido ACL no reconocido: " + contenido);
 
             return;
         }
 
-        // Obtener identificador del pedido.
+        // 4. Obtener identificador del pedido.
         Long idPedido;
 
         try {
@@ -131,8 +120,8 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
 
         } catch (NumberFormatException e) {
 
-            enviarRespuesta(
-                    respuesta,
+            responder(
+                    solicitud,
                     ACLMessage.NOT_UNDERSTOOD,
                     "(id_pedido_invalido)"
             );
@@ -140,107 +129,100 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
             return;
         }
 
+        String producto = matcher.group(2);
+
         LOG.info(
-                "Solicitud de reserva recibida. Pedido: "
+                "Solicitud ACL recibida. Pedido: "
                         + idPedido
+                        + ". Producto: "
+                        + (producto != null ? producto : "no especificado")
                         + ". Emisor: "
                         + solicitud.getSender().getLocalName()
         );
 
-        // 1. Informar que la solicitud será procesada.
-        enviarRespuesta(
-                crearRespuesta(solicitud),
+        // 5. Confirmar que la solicitud será procesada.
+        responder(
+                solicitud,
                 ACLMessage.AGREE,
                 "(procesando_reserva " + idPedido + ")"
         );
 
-        // 2. Ejecutar la reserva real en PostgreSQL.
-        try {
-
-            ReservaService.ResultadoReserva resultado =
-                    reservaService.reservarPedido(idPedido);
-
-            if (resultado.exito()) {
-
-                // 3A. Reserva exitosa.
-                enviarRespuesta(
-                        crearRespuesta(solicitud),
-                        ACLMessage.INFORM,
-                        "(reserva_exitosa "
-                                + idPedido
-                                + " "
-                                + resultado.estado()
-                                + ")"
-                );
-
-                LOG.info(
-                        "Reserva completada para el pedido "
-                                + idPedido
-                );
-
-            } else {
-
-                // 3B. No hay disponibilidad suficiente.
-                String faltantes =
-                        resultado.ingredientesFaltantesJson();
-
-                if (faltantes == null) {
-                    faltantes = "[]";
-                }
-
-                enviarRespuesta(
-                        crearRespuesta(solicitud),
-                        ACLMessage.REFUSE,
-                        "(sin_existencia "
-                                + idPedido
-                                + ") faltantes="
-                                + faltantes
-                );
-
-                LOG.warning(
-                        "Reserva rechazada para el pedido "
-                                + idPedido
-                                + ". Motivo: "
-                                + resultado.mensaje()
-                );
-            }
-
-        } catch (RuntimeException e) {
-
-            // 3C. Error técnico durante la operación.
-            LOG.log(
-                    Level.SEVERE,
-                    "Error al reservar ingredientes del pedido "
-                            + idPedido,
-                    e
-            );
-
-            enviarRespuesta(
-                    crearRespuesta(solicitud),
-                    ACLMessage.FAILURE,
-                    "(error_reserva " + idPedido + ")"
-            );
-        }
+        // 6. Simular el procesamiento de la solicitud.
+        simularReserva(solicitud, idPedido);
     }
 
-    private ACLMessage crearRespuesta(ACLMessage solicitud) {
+    private void simularReserva(
+            ACLMessage solicitud,
+            Long idPedido) {
+
+        // CASO 1: Pedido 101.
+        // Simula una reserva exitosa.
+        if (idPedido == 101L) {
+
+            responder(
+                    solicitud,
+                    ACLMessage.INFORM,
+                    "(reserva_exitosa " + idPedido + ")"
+            );
+
+            LOG.info(
+                    "Simulación exitosa: reserva aceptada para el pedido "
+                            + idPedido
+            );
+
+            return;
+        }
+
+        // CASO 2: Pedido 102.
+        // Simula que no existen ingredientes suficientes.
+        if (idPedido == 102L) {
+
+            responder(
+                    solicitud,
+                    ACLMessage.REFUSE,
+                    "(sin_existencia " + idPedido + ")"
+            );
+
+            LOG.warning(
+                    "Simulación: reserva rechazada por falta de existencias. "
+                            + "Pedido: " + idPedido
+            );
+
+            return;
+        }
+
+        // CASO 3: Cualquier otro pedido.
+        // No está contemplado en los datos simulados.
+        responder(
+                solicitud,
+                ACLMessage.REFUSE,
+                "(pedido_no_simulado " + idPedido + ")"
+        );
+
+        LOG.warning(
+                "Pedido no contemplado en la simulación: " + idPedido
+        );
+    }
+
+    private void responder(
+            ACLMessage solicitud,
+            int performativa,
+            String contenido) {
 
         ACLMessage respuesta = solicitud.createReply();
 
         respuesta.setProtocol(PROTOCOLO);
         respuesta.setOntology(ONTOLOGIA);
-
-        return respuesta;
-    }
-
-    private void enviarRespuesta(
-            ACLMessage respuesta,
-            int performativa,
-            String contenido) {
-
         respuesta.setPerformative(performativa);
         respuesta.setContent(contenido);
 
         myAgent.send(respuesta);
+
+        LOG.info(
+                "Respuesta ACL enviada: "
+                        + ACLMessage.getPerformative(performativa)
+                        + " | Contenido: "
+                        + contenido
+        );
     }
 }

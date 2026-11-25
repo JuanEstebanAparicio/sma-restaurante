@@ -74,10 +74,7 @@ public class AgenteInventario extends Agent {
         );
 
         // Receptor de solicitudes ACL.
-        addBehaviour(
-                new AtenderSolicitudesACL(this, reservaService)
-        );
-
+        addBehaviour(new AtenderSolicitudesACL(this));
         // Monitoreo automático cada 30 segundos.
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
 

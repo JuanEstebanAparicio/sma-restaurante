@@ -17,6 +17,14 @@
             <groupId>de.enflexit.jade</groupId>
             <artifactId>de.enflexit.jade</artifactId>
         </dependency>
+
+        <!-- Módulo del agente de inventario -->
+        <dependency>
+            <groupId>sma.restaurante</groupId>
+            <artifactId>Agente_Inventario</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
     </dependencies>
 
     <build>
