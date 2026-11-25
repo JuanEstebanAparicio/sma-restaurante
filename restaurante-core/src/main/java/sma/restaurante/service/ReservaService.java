@@ -1,18 +1,12 @@
-
 package sma.restaurante.service;
 
 import sma.restaurante.datasource.Jdbc;
 import sma.restaurante.repository.Transaccion;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
-/**
- * Servicio encargado de gestionar las reservas de ingredientes
- * solicitadas por el AgentePedidos.
- *
- * La operación de reserva se ejecuta mediante una función
- * transaccional de PostgreSQL.
- */
 public class ReservaService {
 
     private static final String SQL_RESERVAR_PEDIDO = """
@@ -24,7 +18,16 @@ public class ReservaService {
                 COALESCE(
                     r.resultado -> 'ingredientes_faltantes',
                     '[]'::jsonb
-                )::text AS ingredientes_faltantes
+                )::text AS ingredientes_faltantes,
+                COALESCE(
+                    (
+                        SELECT string_agg(elem ->> 'nombre', '|')
+                        FROM jsonb_array_elements(
+                            COALESCE(r.resultado -> 'ingredientes_faltantes', '[]'::jsonb)
+                        ) AS elem
+                    ),
+                    ''
+                ) AS nombres_faltantes
             FROM (
                 SELECT inventario.fn_reservar_ingredientes_pedido(?)
                     AS resultado
@@ -40,12 +43,6 @@ public class ReservaService {
         );
     }
 
-    /**
-     * Solicita a PostgreSQL reservar los ingredientes de un pedido.
-     *
-     * @param idPedido identificador del pedido
-     * @return resultado de la operación de reserva
-     */
     public ResultadoReserva reservarPedido(Long idPedido) {
 
         if (idPedido == null || idPedido <= 0) {
@@ -59,26 +56,19 @@ public class ReservaService {
                         SQL_RESERVAR_PEDIDO,
                         ps -> ps.setLong(1, idPedido),
                         rs -> {
-
                             boolean exito = rs.getBoolean("exito");
-
                             String mensaje = rs.getString("mensaje");
-
-                            Long idPedidoResultado =
-                                    Jdbc.leerLong(rs, "id_pedido");
-
+                            Long idPedidoResultado = Jdbc.leerLong(rs, "id_pedido");
                             String estado = rs.getString("estado");
-
-                            String ingredientesFaltantes =
-                                    rs.getString("ingredientes_faltantes");
+                            String ingredientesFaltantesJson = rs.getString("ingredientes_faltantes");
+                            List<String> ingredientesFaltantes = extraerNombres(rs.getString("nombres_faltantes"));
 
                             return new ResultadoReserva(
                                     exito,
                                     mensaje,
-                                    idPedidoResultado != null
-                                            ? idPedidoResultado
-                                            : idPedido,
+                                    idPedidoResultado != null ? idPedidoResultado : idPedido,
                                     estado,
+                                    ingredientesFaltantesJson,
                                     ingredientesFaltantes
                             );
                         }
@@ -90,19 +80,23 @@ public class ReservaService {
         );
     }
 
-    /**
-     * Resultado devuelto por PostgreSQL después de intentar
-     * reservar los ingredientes.
-     *
-     * ingredientesFaltantesJson contiene el arreglo JSONB
-     * con los ingredientes que no tienen disponibilidad suficiente.
-     */
+    private static List<String> extraerNombres(String nombresSeparados) {
+        if (nombresSeparados == null || nombresSeparados.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(nombresSeparados.split("\\|"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
     public record ResultadoReserva(
             boolean exito,
             String mensaje,
             Long idPedido,
             String estado,
-            String ingredientesFaltantesJson
+            String ingredientesFaltantesJson,
+            List<String> ingredientesFaltantes
     ) {
     }
 }
