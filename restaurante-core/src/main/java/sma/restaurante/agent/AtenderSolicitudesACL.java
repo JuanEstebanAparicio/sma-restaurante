@@ -1,15 +1,21 @@
-
 package sma.restaurante.agent;
 
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
+import jade.domain.FIPANames;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
-import jade.domain.FIPANames;
+import sma.restaurante.service.ReservaService;
 
+import java.text.Normalizer;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 public class AtenderSolicitudesACL extends CyclicBehaviour {
 
@@ -28,12 +34,15 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
     );
 
     private final MessageTemplate plantilla;
+    private final ReservaService reservaService;
 
-    public AtenderSolicitudesACL(Agent agente) {
-
+    public AtenderSolicitudesACL(Agent agente, ReservaService reservaService) {
         super(agente);
-
-        plantilla = MessageTemplate.and(
+        this.reservaService = Objects.requireNonNull(
+                reservaService,
+                "ReservaService no puede ser null"
+        );
+        this.plantilla = MessageTemplate.and(
                 MessageTemplate.MatchProtocol(PROTOCOLO),
                 MessageTemplate.MatchPerformative(ACLMessage.REQUEST)
         );
@@ -41,7 +50,6 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
 
     @Override
     public void action() {
-
         ACLMessage solicitud = myAgent.receive(plantilla);
 
         if (solicitud == null) {
@@ -56,159 +64,130 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
 
         // 1. Validar ontología.
         if (!ONTOLOGIA.equals(solicitud.getOntology())) {
-
-            responder(
-                    solicitud,
-                    ACLMessage.NOT_UNDERSTOOD,
-                    "(ontologia_no_soportada)"
-            );
-
+            responder(solicitud, ACLMessage.NOT_UNDERSTOOD, "(ontologia_no_soportada)");
             return;
         }
 
         // 2. Validar emisor.
         if (solicitud.getSender() == null) {
-
-            responder(
-                    solicitud,
-                    ACLMessage.NOT_UNDERSTOOD,
-                    "(emisor_no_identificado)"
-            );
-
+            responder(solicitud, ACLMessage.NOT_UNDERSTOOD, "(emisor_no_identificado)");
             return;
         }
 
         // 3. Validar contenido.
         String contenido = solicitud.getContent();
-
         if (contenido == null || contenido.trim().isEmpty()) {
-
-            responder(
-                    solicitud,
-                    ACLMessage.NOT_UNDERSTOOD,
-                    "(contenido_vacio)"
-            );
-
+            responder(solicitud, ACLMessage.NOT_UNDERSTOOD, "(contenido_vacio)");
             return;
         }
 
         Matcher matcher = PATRON_RESERVAR.matcher(contenido.trim());
-
         if (!matcher.matches()) {
-
-            responder(
-                    solicitud,
-                    ACLMessage.NOT_UNDERSTOOD,
-                    "(formato_no_reconocido)"
-            );
-
+            responder(solicitud, ACLMessage.NOT_UNDERSTOOD, "(formato_no_reconocido)");
             LOG.warning("Contenido ACL no reconocido: " + contenido);
-
             return;
         }
 
         // 4. Obtener identificador del pedido.
         Long idPedido;
-
         try {
-
             idPedido = Long.parseLong(matcher.group(1));
-
             if (idPedido <= 0) {
                 throw new NumberFormatException();
             }
-
         } catch (NumberFormatException e) {
-
-            responder(
-                    solicitud,
-                    ACLMessage.NOT_UNDERSTOOD,
-                    "(id_pedido_invalido)"
-            );
-
+            responder(solicitud, ACLMessage.NOT_UNDERSTOOD, "(id_pedido_invalido)");
             return;
         }
-
-        String producto = matcher.group(2);
 
         LOG.info(
-                "Solicitud ACL recibida. Pedido: "
-                        + idPedido
-                        + ". Producto: "
-                        + (producto != null ? producto : "no especificado")
-                        + ". Emisor: "
-                        + solicitud.getSender().getLocalName()
+                "Solicitud ACL recibida. Pedido: " + idPedido
+                        + " | Emisor: " + solicitud.getSender().getLocalName()
         );
 
-        // 5. Confirmar que la solicitud será procesada.
-        responder(
-                solicitud,
-                ACLMessage.AGREE,
-                "(procesando_reserva " + idPedido + ")"
-        );
-
-        // 6. Simular el procesamiento de la solicitud.
-        simularReserva(solicitud, idPedido);
+        // 5. Ejecutar la reserva real en PostgreSQL y responder según el protocolo.
+        procesarReserva(solicitud, idPedido);
     }
 
-    private void simularReserva(
-            ACLMessage solicitud,
-            Long idPedido) {
+    private void procesarReserva(ACLMessage solicitud, Long idPedido) {
+        try {
+            ReservaService.ResultadoReserva resultado =
+                    reservaService.reservarPedido(idPedido);
 
-        // CASO 1: Pedido 101.
-        // Simula una reserva exitosa.
-        if (idPedido == 101L) {
+            if (resultado.exito()) {
+                responder(
+                        solicitud,
+                        ACLMessage.INFORM,
+                        "(reserva_exitosa " + resultado.idPedido() + ")"
+                );
+                LOG.info("Reserva exitosa para el pedido " + resultado.idPedido()
+                        + ": " + resultado.mensaje());
+                return;
+            }
 
+            if (!resultado.ingredientesFaltantes().isEmpty()) {
+                String faltantes = formatearFaltantesACL(resultado.ingredientesFaltantes());
+                String contenido = faltantes.isEmpty()
+                        ? "(sin_existencia " + resultado.idPedido() + ")"
+                        : "(sin_existencia " + resultado.idPedido() + " " + faltantes + ")";
+
+                responder(solicitud, ACLMessage.REFUSE, contenido);
+                LOG.warning("Reserva rechazada por falta de existencias. Pedido: "
+                        + resultado.idPedido() + " | Faltantes: " + faltantes);
+                return;
+            }
+
+            if ("RECHAZADO".equals(resultado.estado())) {
+                responder(
+                        solicitud,
+                        ACLMessage.REFUSE,
+                        "(sin_existencia " + resultado.idPedido() + ")"
+                );
+                LOG.warning("Pedido rechazado: " + resultado.idPedido()
+                        + " | Motivo: " + resultado.mensaje());
+                return;
+            }
+
+            // Pedido inexistente, estado inválido o inconsistencia de reservas previas.
             responder(
                     solicitud,
-                    ACLMessage.INFORM,
-                    "(reserva_exitosa " + idPedido + ")"
+                    ACLMessage.FAILURE,
+                    "(error_reserva " + resultado.idPedido() + ")"
             );
+            LOG.warning("No se pudo completar la reserva del pedido "
+                    + resultado.idPedido() + ": " + resultado.mensaje());
 
-            LOG.info(
-                    "Simulación exitosa: reserva aceptada para el pedido "
-                            + idPedido
-            );
-
-            return;
-        }
-
-        // CASO 2: Pedido 102.
-        // Simula que no existen ingredientes suficientes.
-        if (idPedido == 102L) {
-
+        } catch (RuntimeException e) {
             responder(
                     solicitud,
-                    ACLMessage.REFUSE,
-                    "(sin_existencia " + idPedido + ")"
+                    ACLMessage.FAILURE,
+                    "(error_reserva " + idPedido + ")"
             );
-
-            LOG.warning(
-                    "Simulación: reserva rechazada por falta de existencias. "
-                            + "Pedido: " + idPedido
+            LOG.log(
+                    Level.SEVERE,
+                    "Error técnico al reservar ingredientes para el pedido " + idPedido,
+                    e
             );
-
-            return;
         }
-
-        // CASO 3: Cualquier otro pedido.
-        // No está contemplado en los datos simulados.
-        responder(
-                solicitud,
-                ACLMessage.REFUSE,
-                "(pedido_no_simulado " + idPedido + ")"
-        );
-
-        LOG.warning(
-                "Pedido no contemplado en la simulación: " + idPedido
-        );
     }
 
-    private void responder(
-            ACLMessage solicitud,
-            int performativa,
-            String contenido) {
+    private static String formatearFaltantesACL(List<String> faltantes) {
+        return faltantes.stream()
+                .map(AtenderSolicitudesACL::normalizarTokenACL)
+                .filter(token -> !token.isEmpty())
+                .collect(Collectors.joining(" "));
+    }
 
+    private static String normalizarTokenACL(String nombre) {
+        String sinAcentos = Normalizer.normalize(nombre.trim(), Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        return sinAcentos
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+    }
+
+    private void responder(ACLMessage solicitud, int performativa, String contenido) {
         ACLMessage respuesta = solicitud.createReply();
 
         respuesta.setProtocol(PROTOCOLO);
@@ -221,8 +200,7 @@ public class AtenderSolicitudesACL extends CyclicBehaviour {
         LOG.info(
                 "Respuesta ACL enviada: "
                         + ACLMessage.getPerformative(performativa)
-                        + " | Contenido: "
-                        + contenido
+                        + " | Contenido: " + contenido
         );
     }
 }
