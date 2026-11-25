@@ -1,4 +1,3 @@
-
 package sma.restaurante.hito0;
 
 import jade.core.AID;
@@ -13,7 +12,7 @@ import java.util.UUID;
 
 public class AgenteEmisor extends Agent {
 
-    private static final String DESTINATARIO = "inventario";
+    private static final String DESTINATARIO = "cocina";
     private static final String ONTOLOGIA = "Restaurante";
 
     @Override
@@ -23,7 +22,7 @@ public class AgenteEmisor extends Agent {
                 getLocalName() + " iniciado correctamente"
         );
 
-        // Enviar solicitud cada 10 segundos.
+        // Enviar solicitud de preparación cada 10 segundos.
         addBehaviour(new TickerBehaviour(this, 10000) {
 
             @Override
@@ -45,15 +44,16 @@ public class AgenteEmisor extends Agent {
                 String identificador = UUID.randomUUID().toString();
 
                 mensaje.setConversationId(
-                        "reserva-" + identificador
+                        "comanda-" + identificador
                 );
 
                 mensaje.setReplyWith(
                         "solicitud-" + identificador
                 );
 
+                // En el seeder, pedido_9 ya está en estado ACEPTADO
                 mensaje.setContent(
-                        "(reservar pedido_101 pizza_queso)"
+                        "(preparar pedido_9 lomo_de_cerdo_en_salsa combo_limonada_patacones)"
                 );
 
                 myAgent.send(mensaje);
@@ -68,13 +68,9 @@ public class AgenteEmisor extends Agent {
             }
         });
 
-        // Escuchar las respuestas del AgenteInventario.
-        MessageTemplate plantilla = MessageTemplate.and(
-                MessageTemplate.MatchProtocol(
-                        FIPANames.InteractionProtocol.FIPA_REQUEST
-                ),
-                MessageTemplate.MatchOntology(ONTOLOGIA)
-        );
+        // Escucha tanto las respuestas FIPA-REQUEST (AGREE, INFORM, REFUSE)
+        // como las notificaciones asíncronas (pedido_listo, retraso_cocina).
+        MessageTemplate plantilla = MessageTemplate.MatchOntology(ONTOLOGIA);
 
         addBehaviour(new CyclicBehaviour(this) {
 

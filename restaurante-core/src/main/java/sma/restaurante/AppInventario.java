@@ -5,7 +5,7 @@ import jade.core.ProfileImpl;
 import jade.core.Runtime;
 import jade.wrapper.AgentContainer;
 
-public class App {
+public class AppInventario {
 
     public static void main(String[] args)
             throws Exception {
