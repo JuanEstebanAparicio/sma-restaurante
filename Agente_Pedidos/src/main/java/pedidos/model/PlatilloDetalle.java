@@ -1,20 +1,20 @@
 package pedidos.model;
 
 public class PlatilloDetalle {
-    private final int platilloId;
+    private final long idPlatillo;
     private final String nombre;
     private final int cantidad;
     private final double precioUnitario;
 
-    public PlatilloDetalle(int platilloId, String nombre, int cantidad, double precioUnitario) {
-        this.platilloId = platilloId;
+    public PlatilloDetalle(long idPlatillo, String nombre, int cantidad, double precioUnitario) {
+        this.idPlatillo = idPlatillo;
         this.nombre = nombre;
         this.cantidad = cantidad;
         this.precioUnitario = precioUnitario;
     }
 
-    public int getPlatilloId() {
-        return platilloId;
+    public long getIdPlatillo() {
+        return idPlatillo;
     }
 
     public String getNombre() {

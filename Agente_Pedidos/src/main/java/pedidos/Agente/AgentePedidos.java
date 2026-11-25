@@ -4,6 +4,9 @@ import jade.core.AID;
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
 import jade.core.behaviours.TickerBehaviour;
+import jade.domain.AMSService;
+import jade.domain.FIPAAgentManagement.AMSAgentDescription;
+import jade.domain.FIPAAgentManagement.SearchConstraints;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import pedidos.DataAccessObject.PedidoDAO;
@@ -25,20 +28,19 @@ public class AgentePedidos extends Agent {
     protected void setup() {
         pedidoDAO = new PedidoDAO();
         System.out.println("=================================================================");
-        System.out.println("[" + getLocalName() + "] Iniciado. Monitoreando pedidos en BD...");
+        System.out.println("[" + getLocalName() + "] Iniciado. Monitoreando pedidos RECIBIDO en BD...");
         System.out.println("=================================================================");
 
-        // 1. Consulta periódica a la BD cada 4 segundos
         addBehaviour(new TickerBehaviour(this, 4000) {
             @Override
             protected void onTick() {
                 revisarTimeouts();
 
-                List<PedidoPendiente> nuevosPedidos = pedidoDAO.obtenerPedidosPendientes();
+                List<PedidoPendiente> nuevosPedidos = pedidoDAO.obtenerPedidosRecibidos();
                 for (PedidoPendiente pedido : nuevosPedidos) {
-                    String conversationId = "REQ_RESERVA_" + pedido.getId();
+                    String conversationId = "REQ_RESERVA_" + pedido.getIdPedido();
 
-                    pedidoDAO.actualizarEstado(pedido.getId(), "VALIDANDO");
+                    pedidoDAO.registrarSnapshotYValidar(pedido);
                     pedidosEnEsperaInventario.put(conversationId, pedido);
 
                     System.out.println("\n[" + getLocalName() + "] Nuevo pedido detectado en BD: "
@@ -49,7 +51,6 @@ public class AgentePedidos extends Agent {
             }
         });
 
-        // 2. Escucha AGREE, INFORM (INFORM-DONE) y REFUSE desde AgenteInventario
         addBehaviour(new CyclicBehaviour(this) {
             @Override
             public void action() {
@@ -59,7 +60,13 @@ public class AgentePedidos extends Agent {
                                 MessageTemplate.MatchPerformative(ACLMessage.AGREE),
                                 MessageTemplate.or(
                                         MessageTemplate.MatchPerformative(ACLMessage.INFORM),
-                                        MessageTemplate.MatchPerformative(ACLMessage.REFUSE)
+                                        MessageTemplate.or(
+                                                MessageTemplate.MatchPerformative(ACLMessage.REFUSE),
+                                                MessageTemplate.or(
+                                                        MessageTemplate.MatchPerformative(ACLMessage.NOT_UNDERSTOOD),
+                                                        MessageTemplate.MatchPerformative(ACLMessage.FAILURE)
+                                                )
+                                        )
                                 )
                         )
                 );
@@ -76,14 +83,14 @@ public class AgentePedidos extends Agent {
 
     private void enviarSolicitudReserva(PedidoPendiente pedido, String conversationId) {
         ACLMessage request = new ACLMessage(ACLMessage.REQUEST);
-        request.addReceiver(new AID("AgenteInventario", AID.ISLOCALNAME));
+        request.addReceiver(new AID("inventario", AID.ISLOCALNAME));
         request.setOntology(ONTOLOGIA);
         request.setProtocol("FIPA-Request");
         request.setConversationId(conversationId);
         request.setContent(pedido.serializarSolicitudReserva());
 
         send(request);
-        System.out.println("[" + getLocalName() + "] -> REQUEST enviado a AgenteInventario: " + request.getContent());
+        System.out.println("[" + getLocalName() + "] -> REQUEST enviado a inventario: " + request.getContent());
     }
 
     private void procesarRespuestaInventario(ACLMessage msg) {
@@ -101,17 +108,16 @@ public class AgentePedidos extends Agent {
             case ACLMessage.AGREE:
                 System.out.println("[" + getLocalName() + "] <- AGREE recibido de "
                         + msg.getSender().getLocalName() + ": " + msg.getContent());
-                pedidoDAO.actualizarEstado(pedido.getId(), "RESERVANDO");
                 break;
 
             case ACLMessage.INFORM:
                 pedidosEnEsperaInventario.remove(conversationId);
-                System.out.println("[" + getLocalName() + "] <- INFORM-DONE recibido de "
+                System.out.println("[" + getLocalName() + "] <- INFORM recibido de "
                         + msg.getSender().getLocalName() + ": " + msg.getContent());
 
-                pedidoDAO.actualizarEstado(pedido.getId(), "SERVIDO");
                 servicioCompleto(pedido.getMesa());
                 notificarConsumosCuentaPago(pedido);
+                pedidoDAO.actualizarEstado(pedido.getIdPedido(), "COMPLETADO");
                 break;
 
             case ACLMessage.REFUSE:
@@ -119,7 +125,17 @@ public class AgentePedidos extends Agent {
                 System.out.println("[" + getLocalName() + "] <- REFUSE recibido de "
                         + msg.getSender().getLocalName() + ": " + msg.getContent());
 
-                pedidoDAO.actualizarEstado(pedido.getId(), "RECHAZADO_SIN_STOCK");
+                pedidoDAO.actualizarEstado(pedido.getIdPedido(), "RECHAZADO");
+                break;
+
+            case ACLMessage.NOT_UNDERSTOOD:
+            case ACLMessage.FAILURE:
+                pedidosEnEsperaInventario.remove(conversationId);
+                System.err.println("[" + getLocalName() + "] <- "
+                        + ACLMessage.getPerformative(msg.getPerformative()) + " recibido de "
+                        + msg.getSender().getLocalName() + ": " + msg.getContent());
+
+                pedidoDAO.actualizarEstado(pedido.getIdPedido(), "RECHAZADO");
                 break;
         }
     }
@@ -129,14 +145,36 @@ public class AgentePedidos extends Agent {
     }
 
     private void notificarConsumosCuentaPago(PedidoPendiente pedido) {
+        String contenido = "(consumos " + pedido.getMesa() + " pedido_" + pedido.getIdPedido() + ")";
+
+        if (!existeAgenteEnPlataforma("AgenteCuentaPago")) {
+            System.out.println("[" + getLocalName() + "] -> AgenteCuentaPago aún no está activo en JADE. "
+                    + "Consumo registrado para facturación: " + contenido);
+            return;
+        }
+
         ACLMessage inform = new ACLMessage(ACLMessage.INFORM);
         inform.addReceiver(new AID("AgenteCuentaPago", AID.ISLOCALNAME));
         inform.setOntology(ONTOLOGIA);
         inform.setProtocol("FIPA-Inform");
-        inform.setContent("(consumos " + pedido.getMesa() + " pedido_" + pedido.getId() + ")");
+        inform.setContent(contenido);
 
         send(inform);
         System.out.println("[" + getLocalName() + "] -> INFORM enviado a AgenteCuentaPago: " + inform.getContent());
+    }
+
+    private boolean existeAgenteEnPlataforma(String nombreLocal) {
+        try {
+            AMSAgentDescription plantilla = new AMSAgentDescription();
+            plantilla.setName(new AID(nombreLocal, AID.ISLOCALNAME));
+            SearchConstraints restricciones = new SearchConstraints();
+            restricciones.setMaxResults(1L);
+
+            AMSAgentDescription[] resultados = AMSService.search(this, plantilla, restricciones);
+            return resultados != null && resultados.length > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void revisarTimeouts() {
@@ -144,9 +182,9 @@ public class AgentePedidos extends Agent {
         pedidosEnEsperaInventario.entrySet().removeIf(entry -> {
             PedidoPendiente pedido = entry.getValue();
             if (ahora - pedido.getTimestampEnvio() > TIMEOUT_INVENTARIO_MS) {
-                System.err.println("[" + getLocalName() + "] Sin respuesta final de AgenteInventario para pedido #"
-                        + pedido.getId() + ". Devolviendo estado a PENDIENTE.");
-                pedidoDAO.actualizarEstado(pedido.getId(), "PENDIENTE");
+                System.err.println("[" + getLocalName() + "] Sin respuesta final de inventario para pedido #"
+                        + pedido.getIdPedido() + ". Devolviendo estado a RECIBIDO.");
+                pedidoDAO.actualizarEstado(pedido.getIdPedido(), "RECIBIDO");
                 return true;
             }
             return false;
