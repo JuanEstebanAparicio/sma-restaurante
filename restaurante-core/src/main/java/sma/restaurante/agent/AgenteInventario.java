@@ -1,3 +1,4 @@
+
 package sma.restaurante.agent;
 
 import jade.core.Agent;
@@ -25,32 +26,50 @@ import java.util.logging.Logger;
 
 public class AgenteInventario extends Agent {
 
-    private static final Logger LOG = Logger.getLogger(AgenteInventario.class.getName());
+    private static final Logger LOG =
+            Logger.getLogger(AgenteInventario.class.getName());
+
     private static final long PERIODO_MONITOREO_MS = 30_000;
 
-    /** Lo usaran los mensajes ACL del paso 3 (reservas, disponibilidad de platos). */
     private InventarioService inventarioService;
     private AlertaService alertaService;
 
     @Override
     protected void setup() {
 
-        IngredienteRepository ingredienteRepository = new IngredienteRepositoryPostgres();
-        LoteRepository loteRepository = new LoteRepositoryPostgres();
-        MovimientoRepository movimientoRepository = new MovimientoRepositoryPostgres();
-        AlertaRepository alertaRepository = new AlertaRepositoryPostgres();
+        IngredienteRepository ingredienteRepository =
+                new IngredienteRepositoryPostgres();
+
+        LoteRepository loteRepository =
+                new LoteRepositoryPostgres();
+
+        MovimientoRepository movimientoRepository =
+                new MovimientoRepositoryPostgres();
+
+        AlertaRepository alertaRepository =
+                new AlertaRepositoryPostgres();
+
         Transaccion transaccion = new TransaccionPostgres();
 
         inventarioService = new InventarioService(
-                ingredienteRepository, loteRepository, movimientoRepository, transaccion);
+                ingredienteRepository,
+                loteRepository,
+                movimientoRepository,
+                transaccion
+        );
 
         alertaService = new AlertaService(
                 ingredienteRepository,
                 loteRepository,
                 alertaRepository,
                 new PrediccionService(movimientoRepository),
-                Clock.system(Tiempo.ZONA));
+                Clock.system(Tiempo.ZONA)
+        );
 
+        // Receptor de solicitudes ACL.
+        addBehaviour(new AtenderSolicitudesACL(this));
+
+        // Monitoreo automático del inventario.
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
             @Override
             protected void onTick() {
@@ -58,31 +77,46 @@ public class AgenteInventario extends Agent {
             }
         });
 
-        LOG.info(getLocalName() + " iniciado");
+        LOG.info(getLocalName() + " iniciado correctamente");
     }
 
-    /** Un fallo (por ejemplo, la base de datos pausada) no debe matar al agente. */
     private void ejecutarCicloMonitoreo() {
+
         try {
-            AlertaService.ResultadoSincronizacion resultado = alertaService.sincronizar();
+
+            AlertaService.ResultadoSincronizacion resultado =
+                    alertaService.sincronizar();
 
             resultado.nuevas().forEach(alerta ->
-                    LOG.warning("[" + alerta.getTipoAlerta() + "] " + alerta.getMensaje()));
+                    LOG.warning(
+                            "[" + alerta.getTipoAlerta() + "] "
+                                    + alerta.getMensaje()
+                    )
+            );
 
             if (resultado.resueltas() > 0) {
-                LOG.info(resultado.resueltas()
-                        + " alerta(s) resuelta(s) porque la condicion desaparecio");
+                LOG.info(
+                        resultado.resueltas()
+                                + " alerta(s) resuelta(s)"
+                );
             }
 
         } catch (RuntimeException e) {
-            LOG.log(Level.SEVERE,
-                    "Fallo en el ciclo de monitoreo; se reintenta en el siguiente", e);
+
+            LOG.log(
+                    Level.SEVERE,
+                    "Fallo en el ciclo de monitoreo. "
+                            + "Se reintentará en el siguiente ciclo.",
+                    e
+            );
         }
     }
 
     @Override
     protected void takeDown() {
+
         DatabaseConnection.cerrar();
+
         LOG.info(getLocalName() + " finalizado");
     }
 }
