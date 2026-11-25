@@ -37,3 +37,7 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Archivos de credenciales locales
+**/application.properties
+application.properties
