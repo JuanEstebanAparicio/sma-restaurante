@@ -11,13 +11,14 @@ import sma.restaurante.repository.AlertaRepository;
 import sma.restaurante.repository.IngredienteRepository;
 import sma.restaurante.repository.LoteRepository;
 import sma.restaurante.repository.MovimientoRepository;
+import sma.restaurante.repository.Transaccion;
 import sma.restaurante.repository.impl.AlertaRepositoryPostgres;
 import sma.restaurante.repository.impl.IngredienteRepositoryPostgres;
 import sma.restaurante.repository.impl.LoteRepositoryPostgres;
 import sma.restaurante.repository.impl.MovimientoRepositoryPostgres;
-import sma.restaurante.service.InventarioService;
-import sma.restaurante.repository.Transaccion;
 import sma.restaurante.repository.impl.TransaccionPostgres;
+import sma.restaurante.service.InventarioService;
+import sma.restaurante.service.ReservaService;
 import sma.restaurante.util.Tiempo;
 
 import java.time.Clock;
@@ -32,6 +33,7 @@ public class AgenteInventario extends Agent {
     private static final long PERIODO_MONITOREO_MS = 30_000;
 
     private InventarioService inventarioService;
+    private ReservaService reservaService;
     private AlertaService alertaService;
 
     @Override
@@ -51,6 +53,7 @@ public class AgenteInventario extends Agent {
 
         Transaccion transaccion = new TransaccionPostgres();
 
+        // Servicio general de inventario.
         inventarioService = new InventarioService(
                 ingredienteRepository,
                 loteRepository,
@@ -58,6 +61,10 @@ public class AgenteInventario extends Agent {
                 transaccion
         );
 
+        // Servicio encargado de reservar ingredientes para pedidos.
+        reservaService = new ReservaService(transaccion);
+
+        // Servicio de alertas y monitoreo.
         alertaService = new AlertaService(
                 ingredienteRepository,
                 loteRepository,
@@ -67,10 +74,13 @@ public class AgenteInventario extends Agent {
         );
 
         // Receptor de solicitudes ACL.
-        addBehaviour(new AtenderSolicitudesACL(this));
+        addBehaviour(
+                new AtenderSolicitudesACL(this, reservaService)
+        );
 
-        // Monitoreo automático del inventario.
+        // Monitoreo automático cada 30 segundos.
         addBehaviour(new TickerBehaviour(this, PERIODO_MONITOREO_MS) {
+
             @Override
             protected void onTick() {
                 ejecutarCicloMonitoreo();
@@ -95,6 +105,7 @@ public class AgenteInventario extends Agent {
             );
 
             if (resultado.resueltas() > 0) {
+
                 LOG.info(
                         resultado.resueltas()
                                 + " alerta(s) resuelta(s)"
