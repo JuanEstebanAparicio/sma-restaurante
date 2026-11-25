@@ -7,21 +7,22 @@ import java.util.List;
 import java.util.Map;
 
 public class PedidoPendiente {
-    private final int id;
+    private final long idPedido;
     private final String mesa;
     private final long timestampEnvio;
     private final List<PlatilloDetalle> platillos = new ArrayList<>();
-    private final Map<Integer, Double> ingredientesTotales = new LinkedHashMap<>();
-    private final Map<Integer, String> nombresIngredientes = new LinkedHashMap<>();
+    private final Map<Long, IngredienteRequerido> ingredientes = new LinkedHashMap<>();
 
-    public PedidoPendiente(int id, String mesa) {
-        this.id = id;
-        this.mesa = mesa;
+    public PedidoPendiente(long idPedido, String observaciones) {
+        this.idPedido = idPedido;
+        this.mesa = (observaciones != null && !observaciones.isBlank())
+                ? observaciones.trim().replaceAll("\\s+", "_")
+                : "mesa_" + idPedido;
         this.timestampEnvio = System.currentTimeMillis();
     }
 
-    public int getId() {
-        return id;
+    public long getIdPedido() {
+        return idPedido;
     }
 
     public String getMesa() {
@@ -36,36 +37,42 @@ public class PedidoPendiente {
         return platillos;
     }
 
-    public Map<Integer, Double> getIngredientesTotales() {
-        return ingredientesTotales;
+    public Map<Long, IngredienteRequerido> getIngredientes() {
+        return ingredientes;
     }
 
     public void agregarPlatillo(PlatilloDetalle detalle) {
         platillos.add(detalle);
     }
 
-    public void agregarRequerimientoIngrediente(int ingredienteId, String nombre, double cantidad) {
-        ingredientesTotales.merge(ingredienteId, cantidad, Double::sum);
-        nombresIngredientes.putIfAbsent(ingredienteId, nombre);
+    public void agregarIngrediente(long idIngrediente, String nombre, String unidadMedida, double cantidad) {
+        ingredientes.compute(idIngrediente, (id, existente) -> {
+            if (existente == null) {
+                return new IngredienteRequerido(idIngrediente, nombre, unidadMedida, cantidad);
+            }
+            existente.sumarCantidad(cantidad);
+            return existente;
+        });
     }
 
-    public double calcularTotalCuenta() {
+    public double calcularTotal() {
         return platillos.stream().mapToDouble(PlatilloDetalle::getSubtotal).sum();
     }
 
-
     public String serializarSolicitudReserva() {
-        StringBuilder listaPlatillos = new StringBuilder();
+        StringBuilder sbPlatillos = new StringBuilder();
         for (PlatilloDetalle p : platillos) {
             String slug = normalizarTexto(p.getNombre());
-            for (int i = 0; i < p.getCantidad(); i++) {
-                listaPlatillos.append(slug).append(",");
+            if (!sbPlatillos.isEmpty()) {
+                sbPlatillos.append("_");
             }
+            sbPlatillos.append(slug);
         }
-        if (!listaPlatillos.isEmpty()) {
-            listaPlatillos.deleteCharAt(listaPlatillos.length() - 1);
+        if (sbPlatillos.isEmpty()) {
+            sbPlatillos.append("general");
         }
-        return "(reservar pedido_" + id + " " + listaPlatillos + ")";
+
+        return "(reservar pedido_" + idPedido + " " + sbPlatillos + ")";
     }
 
     public static String normalizarTexto(String texto) {
@@ -75,6 +82,17 @@ public class PedidoPendiente {
     }
 
     public String resumenLegible() {
-        return "Pedido #" + id + " [" + mesa + "] -> Platillos: " + platillos;
+        StringBuilder sb = new StringBuilder();
+        sb.append("Pedido #").append(idPedido).append(" [").append(mesa).append("] -> Platillos: ")
+                .append(platillos).append(" | Total: $").append(calcularTotal()).append(" | Receta: {");
+        for (IngredienteRequerido ing : ingredientes.values()) {
+            sb.append(ing.getNombre()).append("=").append(ing.getCantidadRequerida())
+                    .append(" ").append(ing.getUnidadMedida()).append(", ");
+        }
+        if (!ingredientes.isEmpty()) {
+            sb.setLength(sb.length() - 2);
+        }
+        sb.append("}");
+        return sb.toString();
     }
 }
