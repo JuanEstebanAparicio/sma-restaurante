@@ -44,7 +44,6 @@
   <modules>
     <module>hito0-prueba</module>
     <module>restaurante-core</module>
-    <module>restaurante-web</module>
     <module>Agente_Pedidos</module>
   </modules>
 
