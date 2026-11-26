@@ -90,6 +90,19 @@ public class ReservaService {
                 .toList();
     }
 
+    private static final String SQL_CONFIRMAR_CONSUMO =
+            "SELECT inventario.fn_confirmar_consumo_pedido(?)::text AS resultado";
+
+    public String confirmarConsumoPedido(long idPedido) {
+        return transaccion.ejecutar(() ->
+                sma.restaurante.datasource.Jdbc.consultarUno(
+                        SQL_CONFIRMAR_CONSUMO,
+                        ps -> ps.setLong(1, idPedido),
+                        rs -> rs.getString("resultado")
+                ).orElse("{\"exito\":false,\"mensaje\":\"Sin respuesta de BD\"}")
+        );
+    }
+
     public record ResultadoReserva(
             boolean exito,
             String mensaje,
