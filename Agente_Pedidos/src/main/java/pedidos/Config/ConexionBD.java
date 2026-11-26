@@ -7,7 +7,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
 
-public class ConexionBD {
+public final class ConexionBD {
 
     private static final Properties PROPIEDADES = cargarPropiedades();
 

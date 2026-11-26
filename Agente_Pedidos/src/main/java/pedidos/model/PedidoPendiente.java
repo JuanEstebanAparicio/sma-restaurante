@@ -59,6 +59,10 @@ public class PedidoPendiente {
         return platillos.stream().mapToDouble(PlatilloDetalle::getSubtotal).sum();
     }
 
+    /**
+     * Formato para AgenteInventario (tokens unidos por '_'):
+     * (reservar pedido_1 pollo_a_la_plancha_bebida_gaseosa_cola)
+     */
     public String serializarSolicitudReserva() {
         StringBuilder sbPlatillos = new StringBuilder();
         for (PlatilloDetalle p : platillos) {
@@ -73,6 +77,27 @@ public class PedidoPendiente {
         }
 
         return "(reservar pedido_" + idPedido + " " + sbPlatillos + ")";
+    }
+
+    /**
+     * Formato para AgenteCocina (platillos separados por espacio):
+     * pollo_a_la_plancha pollo_a_la_plancha bebida_gaseosa_cola
+     */
+    public String serializarPlatillosParaCocina() {
+        StringBuilder sbPlatillos = new StringBuilder();
+        for (PlatilloDetalle p : platillos) {
+            String slug = normalizarTexto(p.getNombre());
+            for (int i = 0; i < p.getCantidad(); i++) {
+                if (!sbPlatillos.isEmpty()) {
+                    sbPlatillos.append(" ");
+                }
+                sbPlatillos.append(slug);
+            }
+        }
+        if (sbPlatillos.isEmpty()) {
+            sbPlatillos.append("general");
+        }
+        return sbPlatillos.toString();
     }
 
     public static String normalizarTexto(String texto) {

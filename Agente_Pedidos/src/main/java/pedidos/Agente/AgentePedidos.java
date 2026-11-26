@@ -7,17 +7,21 @@ import jade.core.behaviours.TickerBehaviour;
 import jade.domain.AMSService;
 import jade.domain.FIPAAgentManagement.AMSAgentDescription;
 import jade.domain.FIPAAgentManagement.SearchConstraints;
+import jade.domain.FIPANames;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
+import jade.proto.AchieveREInitiator;
 import pedidos.DataAccessObject.PedidoDAO;
 import pedidos.model.PedidoPendiente;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 public class AgentePedidos extends Agent {
 
+    private static final Logger LOG = Logger.getLogger(AgentePedidos.class.getName());
     private static final String ONTOLOGIA = "Restaurante";
     private static final long TIMEOUT_INVENTARIO_MS = 15000L;
 
@@ -31,7 +35,7 @@ public class AgentePedidos extends Agent {
         System.out.println("[" + getLocalName() + "] Iniciado. Monitoreando pedidos RECIBIDO en BD...");
         System.out.println("=================================================================");
 
-        addBehaviour(new TickerBehaviour(this, 4000) {
+        addBehaviour(new TickerBehaviour(this, 3000) {
             @Override
             protected void onTick() {
                 revisarTimeouts();
@@ -54,24 +58,27 @@ public class AgentePedidos extends Agent {
         addBehaviour(new CyclicBehaviour(this) {
             @Override
             public void action() {
-                MessageTemplate plantilla = MessageTemplate.and(
-                        MessageTemplate.MatchOntology(ONTOLOGIA),
-                        MessageTemplate.or(
-                                MessageTemplate.MatchPerformative(ACLMessage.AGREE),
+                MessageTemplate plantillaInventario = MessageTemplate.and(
+                        MessageTemplate.MatchSender(new AID("inventario", AID.ISLOCALNAME)),
+                        MessageTemplate.and(
+                                MessageTemplate.MatchOntology(ONTOLOGIA),
                                 MessageTemplate.or(
-                                        MessageTemplate.MatchPerformative(ACLMessage.INFORM),
+                                        MessageTemplate.MatchPerformative(ACLMessage.AGREE),
                                         MessageTemplate.or(
-                                                MessageTemplate.MatchPerformative(ACLMessage.REFUSE),
+                                                MessageTemplate.MatchPerformative(ACLMessage.INFORM),
                                                 MessageTemplate.or(
-                                                        MessageTemplate.MatchPerformative(ACLMessage.NOT_UNDERSTOOD),
-                                                        MessageTemplate.MatchPerformative(ACLMessage.FAILURE)
+                                                        MessageTemplate.MatchPerformative(ACLMessage.REFUSE),
+                                                        MessageTemplate.or(
+                                                                MessageTemplate.MatchPerformative(ACLMessage.NOT_UNDERSTOOD),
+                                                                MessageTemplate.MatchPerformative(ACLMessage.FAILURE)
+                                                        )
                                                 )
                                         )
                                 )
                         )
                 );
 
-                ACLMessage msg = myAgent.receive(plantilla);
+                ACLMessage msg = myAgent.receive(plantillaInventario);
                 if (msg != null) {
                     procesarRespuestaInventario(msg);
                 } else {
@@ -85,7 +92,8 @@ public class AgentePedidos extends Agent {
         ACLMessage request = new ACLMessage(ACLMessage.REQUEST);
         request.addReceiver(new AID("inventario", AID.ISLOCALNAME));
         request.setOntology(ONTOLOGIA);
-        request.setProtocol("FIPA-Request");
+        request.setProtocol(FIPANames.InteractionProtocol.FIPA_REQUEST);
+        request.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
         request.setConversationId(conversationId);
         request.setContent(pedido.serializarSolicitudReserva());
 
@@ -115,9 +123,7 @@ public class AgentePedidos extends Agent {
                 System.out.println("[" + getLocalName() + "] <- INFORM recibido de "
                         + msg.getSender().getLocalName() + ": " + msg.getContent());
 
-                servicioCompleto(pedido.getMesa());
-                notificarConsumosCuentaPago(pedido);
-                pedidoDAO.actualizarEstado(pedido.getIdPedido(), "COMPLETADO");
+                solicitarPreparacionACocina(pedido);
                 break;
 
             case ACLMessage.REFUSE:
@@ -140,6 +146,58 @@ public class AgentePedidos extends Agent {
         }
     }
 
+    private void solicitarPreparacionACocina(PedidoPendiente pedido) {
+        long idPedido = pedido.getIdPedido();
+        String resumenPlatillos = pedido.serializarPlatillosParaCocina();
+
+        if (!existeAgenteEnPlataforma("AgenteCocina")) {
+            LOG.warning("AgenteCocina no está activo en JADE. Completando flujo directamente para pedido_" + idPedido);
+            finalizarPedidoYNotificarCuentaPago(pedido);
+            return;
+        }
+
+        ACLMessage req = new ACLMessage(ACLMessage.REQUEST);
+        req.addReceiver(new AID("AgenteCocina", AID.ISLOCALNAME));
+        req.setProtocol(FIPANames.InteractionProtocol.FIPA_REQUEST);
+        req.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
+        req.setOntology(ONTOLOGIA);
+        req.setContent("(preparar pedido_" + idPedido + " " + resumenPlatillos + ")");
+
+        System.out.println("[" + getLocalName() + "] -> REQUEST enviado a AgenteCocina: " + req.getContent());
+
+        addBehaviour(new AchieveREInitiator(this, req) {
+            @Override
+            protected void handleAgree(ACLMessage agree) {
+                System.out.println("[" + getLocalName() + "] <- AGREE recibido de AgenteCocina: " + agree.getContent());
+            }
+
+            @Override
+            protected void handleInform(ACLMessage inform) {
+                System.out.println("[" + getLocalName() + "] <- INFORM recibido de AgenteCocina: " + inform.getContent());
+                finalizarPedidoYNotificarCuentaPago(pedido);
+            }
+
+            @Override
+            protected void handleRefuse(ACLMessage refuse) {
+                System.err.println("[" + getLocalName() + "] <- REFUSE recibido de AgenteCocina: " + refuse.getContent());
+                pedidoDAO.actualizarEstado(idPedido, "RECHAZADO");
+            }
+
+            @Override
+            protected void handleFailure(ACLMessage failure) {
+                System.err.println("[" + getLocalName() + "] <- FAILURE recibido de AgenteCocina: " + failure.getContent());
+                pedidoDAO.actualizarEstado(idPedido, "RECHAZADO");
+            }
+        });
+    }
+
+    private void finalizarPedidoYNotificarCuentaPago(PedidoPendiente pedido) {
+        servicioCompleto(pedido.getMesa());
+        pedidoDAO.confirmarDescuentoInventarioFinal(pedido);
+        notificarConsumosCuentaPago(pedido);
+        pedidoDAO.actualizarEstado(pedido.getIdPedido(), "COMPLETADO");
+    }
+
     private void servicioCompleto(String mesa) {
         System.out.println("[" + getLocalName() + "] Ejecutando servicioCompleto(" + mesa + ")");
     }
@@ -157,6 +215,7 @@ public class AgentePedidos extends Agent {
         inform.addReceiver(new AID("AgenteCuentaPago", AID.ISLOCALNAME));
         inform.setOntology(ONTOLOGIA);
         inform.setProtocol("FIPA-Inform");
+        inform.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
         inform.setContent(contenido);
 
         send(inform);

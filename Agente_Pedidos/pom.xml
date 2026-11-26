@@ -20,10 +20,10 @@
     </properties>
 
     <dependencies>
-        <!-- Módulo núcleo para levantar AgenteInventario desde MainPedidos -->
+        <!-- Módulo núcleo (su artifactId real es Agente_Inventario) -->
         <dependency>
             <groupId>sma.restaurante</groupId>
-            <artifactId>restaurante-core</artifactId>
+            <artifactId>Agente_Inventario</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
 
