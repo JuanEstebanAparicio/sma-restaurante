@@ -52,7 +52,10 @@ public class AtenderComandasACL extends AchieveREResponder {
 
         if (motivoRechazo.isPresent()) {
             LOG.warning("Comanda rechazada para pedido_" + idPedido + ": " + motivoRechazo.get());
-            throw new RefuseException("(rechazo_comanda pedido_" + idPedido + " " + motivoRechazo.get() + ")");
+            ACLMessage refuse = request.createReply();
+            refuse.setPerformative(ACLMessage.REFUSE);
+            refuse.setContent("(rechazo_comanda pedido_" + idPedido + " " + motivoRechazo.get() + ")");
+            return refuse;
         }
 
         // Paso 1 del diagrama AUML: AGREE repitiendo la acción solicitada
